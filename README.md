@@ -4,19 +4,21 @@
 
 - 大盘和板块相关表
 
-  ![1662082285273](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662082285273.png)
+  ![image-20240925222252250](.\images\image-20240925222252250.png)
+
+  ![1662082285273](./images/1662082285273.png)
 
 - 个股相关表
 
-  ![1662082435249](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662082435249.png)
+  ![image-20240925222311122](.\images\image-20240925222311122.png)
 
 - 权限相关表
 
-  ![1662082685953](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662082685953.png)
+  ![1662082685953](.\images\1662082685953.png)
 
 - 日志表
 
-  ![1662082786986](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662082786986.png)
+  ![1662082786986](.\images\1662082786986.png)
 
 > 注意事项
 >
@@ -107,7 +109,7 @@
 
 拥有两个主要功能：采集和展示，那其中两个有公共部分，也就是持久层部分和数据库的查询与写入，都使用到了与股票相关的实体对象。那么我们将其抽象出一个公共部分，作为一个模块。三个工程由一个父工程管理。
 
-![image-20240923195816662](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923195816662.png)
+![image-20240923195816662](.\images\image-20240923195816662.png)
 
 构建过程中的注意：
 
@@ -208,24 +210,24 @@
 
 common工程主要负责抽象出采集端和展示端的公共功能部分，暂时来说就是对数据库的操作，即DAO层。那么其暂时目录如下：
 
-<img src="C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923200340921.png" alt="image-20240923200340921" style="zoom: 80%;" />
+<img src=".\images\image-20240923200340921.png" alt="image-20240923200340921" style="zoom: 80%;" />
 
-<img src="C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923200358531.png" alt="image-20240923200358531" style="zoom:80%;" />
+<img src=".\images\image-20240923200358531.png" alt="image-20240923200358531" style="zoom:80%;" />
 
 主要有三个部分：
 
 - mapper：定义DAO层向外提供的接口方法
-  - ![image-20240923200553229](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923200553229.png)
+  - ![image-20240923200553229](./images/image-20240923200553229.png)
 
 - pojo.entity：和数据库中资源对应的类，需要有getter、setter，这里用注解@Date构建（插件：lombok）
 - mapper的xml资源：对应mapper提供接口方法的具体sql实现
-  - ![image-20240923200731680](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923200731680.png)
+  - ![image-20240923200731680](./images/image-20240923200731680.png)
 
 ### Backend工程构建
 
 backend工程是应用与用户交互的主要模块，其应该担任控制层和服务层（持久层由common担任）。控制层即处理来自用户的请求，找到对应处理请求的控制器，并与服务层配合。服务层处理具体的业务请求，调用DAO层。
 
-![image-20240923201130874](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240923201130874.png)
+![image-20240923201130874](.\images\image-20240923201130874.png)
 
 具体到目录中：
 
@@ -260,7 +262,7 @@ backend工程是应用与用户交互的主要模块，其应该担任控制层�
 npm install # 若安装依赖过慢，可安装cnpm并下载安装依赖
 ~~~
 
-![1662090790946](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662090790946.png)
+![1662090790946](.\images\1662090790946.png)
 
 ~~~shell
 npm run dev # 启动工程
@@ -480,7 +482,7 @@ com.async.stock.vo
                   ├── req  # 请求数据封装类
                   └── resp # 响应数据封装类
 
-![image-20240924212339584](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240924212339584.png)
+![image-20240924212339584](./images/image-20240924212339584.png)
 
 
 
@@ -777,7 +779,7 @@ public class UserServiceImpl implements UserService {
 
 ### 3.4 Postman测试
 
-![1662110415277](C:/Users/16232/Desktop/项目1-今日指数课件/day01-项目介绍与工程搭建/讲义/img/1662110415277.png)
+![1662110415277](./images/1662110415277.png)
 
 # 四、用户登录功能实现-02（验证码、Session）
 
@@ -842,7 +844,7 @@ public class UserServiceImpl implements UserService {
 
 单体架构基于session-cookie机制实现验证码流程：
 
-![image-20240924213921859](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240924213921859.png)
+![image-20240924213921859](./images/image-20240924213921859.png)
 
 ### 6. **总结：Session 和 Cookie 的关系与区别**
 
@@ -1335,7 +1337,7 @@ JWT 一旦被泄露，攻击者就可以伪装成合法用户。因此，需要�
 
 我们可使用分布式缓存redis模拟session机制，实现验证码的生成和校验功能，核心流程如下：
 
-![image-20240924215414902](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240924215414902.png)
+![image-20240924215414902](./images/image-20240924215414902.png)
 
 > 注意事项：需要保证SessionId的唯一性，否则可能会出现用户输入了正确的校验码，但是依旧可能会校验失败的问题；
 
@@ -1563,7 +1565,7 @@ public class TestRedis {
 
 效果：
 
-![image-20211230090822359](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/image-20211230090822359.png)
+![image-20211230090822359](./images/image-20211230090822359.png)
 
 
 
@@ -1577,7 +1579,7 @@ public class TestRedis {
 
   - 雪花算法是Twitter公司内部为分布式环境下生成唯一ID的一种算法解决方案，底层会帮助我们生成一个64位(比特位)的long类型的Id；
 
-    ![1663484469121](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1663484469121.png)
+    ![1663484469121](./images/1663484469121.png)
 
 ### 2.2 导入雪花算法工具类
 
@@ -1736,7 +1738,7 @@ public class IdWorker {
 
 效果：
 
-![image-17641893658.png](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/17641893658.png)
+![image-17641893658.png](./images/17641893658.png)
 
 
 
@@ -1899,11 +1901,11 @@ public class StockConstant {
 
 postman:http://127.0.0.1:8091/api/captcha
 
-![1672839665494](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1672839665494.png)
+![1672839665494](./images/1672839665494.png)
 
 页面效果：
 
-![1672839831330](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1672839831330.png)
+![1672839831330](./images/1672839831330.png)
 
 ## 4、完善验证码登录功能
 
@@ -1998,7 +2000,7 @@ public class LoginReqVo {
 
 页面登录效果：
 
-![image-20220106203213288](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/image-20220106203213288.png)
+![image-20220106203213288](./images/image-20220106203213288.png)
 
 
 
@@ -2196,7 +2198,7 @@ public SysUser getUserByUserName(@PathVariable("userName") String userName){
 
 访问/swagger-ui/index.html效果如图所示，能够进行接口测试以及接口、对象信息查看等。
 
-![image-20240925152909361](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240925152909361.png)
+![image-20240925152909361](./images/image-20240925152909361.png)
 
 ## 2. knife4j
 
@@ -2253,7 +2255,7 @@ public class SwaggerConfiguration {
 
 访问路径为：http://localhost:8091/doc.html
 
-![image-20240925165557222](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240925165557222.png)
+![image-20240925165557222](./images/image-20240925165557222.png)
 
 可以更加清晰地了解项目接口，以及进行接口测试、文档导出等功能。
 
@@ -2277,7 +2279,7 @@ YApi让接口开发更简单高效，让接口的管理更具可读性、可维�
 
 查询A股大盘最新的数据：
 
-![1649316633895](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1649316633895.png)
+![1649316633895](./images/1649316633895.png)
 
 > 国内大盘数据包含：大盘代码、大盘名称、开盘点、最新点、前收盘点、交易量、交易金额、涨跌值、涨幅、振幅、当前日期
 
@@ -2287,7 +2289,7 @@ YApi让接口开发更简单高效，让接口的管理更具可读性、可维�
 
 国内股票大盘数据详情表设计如下：
 
-![1662342968429](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1662342968429.png)
+![1662342968429](./images/1662342968429.png)
 
 > 注意事项：
 >
@@ -2898,11 +2900,11 @@ AND smi.cur_time ='2021-12-28 09:31:00';
 
 - postman:http://127.0.0.1:8091/api/quot/index/all
 
-![1649318274605](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/1649318274605.png)
+![1649318274605](./images/1649318274605.png)
 
 - 页面最终显示效果：
 
-<img src="C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240925204541692.png" alt="image-20240925204541692" style="zoom:80%;" />
+<img src="./images/image-20240925204541692.png" alt="image-20240925204541692" style="zoom:80%;" />
 
 
 
@@ -2912,13 +2914,13 @@ AND smi.cur_time ='2021-12-28 09:31:00';
 
 ### 1.1 功能原型效果
 
-![image-20220106222236973](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/image-20220106222236973.png)
+![image-20220106222236973](./images/image-20220106222236973.png)
 
 ### 1.2 板块表数据分析
 
  stock_block_rt_info板块表分析：
 
-![image-20211230165720886](C:/Users/16232/Desktop/项目1-今日指数课件/day02-大盘板块功能实现/讲义/img/image-20211230165720886.png)
+![image-20211230165720886](./images/image-20211230165720886.png)
 
 >  说明：板块表涵盖了业务所需的所有字段数据;
 
@@ -3184,8 +3186,8 @@ mapper接口方法：
 
 http://127.0.0.1:8091/api/quot/sector/all
 
-![image-20240925212203397](C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240925212203397.png)
+![image-20240925212203397](./images/image-20240925212203397.png)
 
 前端页面：
 
-<img src="C:\Users\16232\AppData\Roaming\Typora\typora-user-images\image-20240925212233485.png" alt="image-20240925212233485" style="zoom:80%;" />
+<img src="./images/image-20240925212233485.png" alt="image-20240925212233485" style="zoom:80%;" />
