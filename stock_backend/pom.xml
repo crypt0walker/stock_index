@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <!-- 定义了该项目继承自父项目 `stock_parent` -->
+    <parent>
+        <artifactId>stock_parent</artifactId> <!-- 父项目的 artifactId -->
+        <groupId>com.itheima.stock</groupId> <!-- 父项目的 groupId -->
+        <version>1.0-SNAPSHOT</version> <!-- 父项目的版本号 -->
+    </parent>
+
+    <modelVersion>4.0.0</modelVersion> <!-- Maven 模型版本 -->
+    <packaging>jar</packaging> <!-- 项目打包类型，定义为 JAR 包 -->
+
+    <!-- 定义该项目的 artifactId 和描述信息 -->
+    <artifactId>stock_backend</artifactId>
+    <description>定义股票数据展示后端工程</description>
+
+    <!-- Maven 构建属性，指定 Java 版本为 8 -->
+    <properties>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+    </properties>
+
+    <!-- 引入该项目的依赖项 -->
+    <dependencies>
+        <!--
+            引入 `stock_common` 模块的依赖，
+            由于 common 工程可能包含多个通用类或工具类，因此直接引入。
+        -->
+        <dependency>
+            <groupId>com.itheima.stock</groupId>
+            <artifactId>stock_common</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!--
+            Spring Boot Web Starter 是 Spring Boot 的核心模块之一，
+            提供了构建 Web 应用所需的基础依赖，包括 Spring MVC、Tomcat 等。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!--
+            Spring Boot Test Starter 是专门用于 Spring Boot 应用的测试框架，
+            包含 JUnit、Mockito 等常见测试框架。scope 为 test 表示仅在测试时使用。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+            Spring Security Crypto 模块提供密码加密和校验工具，
+            方便开发者在应用中进行加密操作，如 BCrypt 加密。
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+
+        <!--redis场景依赖-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- redis创建连接池，默认不会创建连接池 -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+
+        <!--hutool万能工具包-->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>5.8.32</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- 定义打包时生成的最终文件名，使用 `artifactId` 作为文件名 -->
+        <finalName>${project.artifactId}</finalName>
+
+        <!-- 插件配置 -->
+        <plugins>
+            <!--
+                Spring Boot Maven Plugin 用于支持打包 Spring Boot 应用，
+                它可以将 Spring Boot 应用打包为可执行的 JAR 文件，包含嵌入式 Tomcat。
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
