@@ -7,8 +7,10 @@ import com.async.stock.mapper.StockRtInfoMapper;
 import com.async.stock.pojo.domain.InnerMarketDomain;
 import com.async.stock.pojo.domain.StockBlockDomain;
 import com.async.stock.pojo.domain.StockInfoConfig;
+import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.service.StockService;
 import com.async.stock.utils.DateTimeUtil;
+import com.async.stock.vo.resp.PageResult;
 import com.async.stock.vo.resp.R;
 import com.async.stock.vo.resp.ResponseCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,8 +45,8 @@ public class StockServiceImpl implements StockService {
     @Autowired
     private StockMarketIndexInfoMapper stockMarketIndexInfoMapper;
 
-//    @Autowired
-//    private StockRtInfoMapper stockRtInfoMapper;
+    @Autowired
+    private StockRtInfoMapper stockRtInfoMapper;
 
     @Override
     public R<List<InnerMarketDomain>> getInnerIndexAll() {
@@ -88,27 +90,27 @@ public class StockServiceImpl implements StockService {
      * @param pageSize 每页大小
      * @return
      */
-//    @Override
-//    public R<PageResult<StockUpdownDomain>> getPageStockInfos(Integer page, Integer pageSize) {
-//        //1.获取最新的股票交易时间
-//        Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
-//        //TODO 伪造数据，后续删除
-//        lastDate=DateTime.parse("2022-07-07 14:43:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
-//        //2.设置分页参数
-//        PageHelper.startPage(page,pageSize);
-//        //3.调用mapper查询数据
-//        List<StockUpdownDomain> infos=stockRtInfoMapper.getStockUpDownInfos(lastDate);
-//        //判断数据是否为空
-//        if (CollectionUtils.isEmpty(infos)) {
-//            return R.error(ResponseCode.NO_RESPONSE_DATA);
-//        }
-//        //3.组装数据
-//        //转化成PageInfo对象
-//        //PageInfo<StockUpdownDomain> pageInfo = new PageInfo<>(infos);
-//        PageResult<StockUpdownDomain> pageResult = new PageResult<>(new PageInfo<>(infos));
-//        //4.响应数据
-//        return R.ok(pageResult);
-//    }
+    @Override
+    public R<PageResult<StockUpdownDomain>> getPageStockInfos(Integer page, Integer pageSize) {
+        //1.获取最新的股票交易时间
+        Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+        //TODO 伪造数据，后续删除
+        lastDate=DateTime.parse("2022-07-07 14:43:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.设置分页参数
+        PageHelper.startPage(page,pageSize);
+        //3.调用mapper查询数据
+        List<StockUpdownDomain> infos=stockRtInfoMapper.getStockUpDownInfos(lastDate);
+        //判断数据是否为空
+        if (CollectionUtils.isEmpty(infos)) {
+            return R.error(ResponseCode.NO_RESPONSE_DATA);
+        }
+        //3.组装数据
+        //转化成PageInfo对象
+        //PageInfo<StockUpdownDomain> pageInfo = new PageInfo<>(infos);
+        PageResult<StockUpdownDomain> pageResult = new PageResult<>(new PageInfo<>(infos));
+        //4.响应数据
+        return R.ok(pageResult);
+    }
 
     /**
      * 统计最新交易日下股票在各个时间点涨跌停的数量

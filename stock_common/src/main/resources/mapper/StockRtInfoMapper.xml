@@ -31,8 +31,24 @@
         from stock_rt_info
         where  id = #{id,jdbcType=BIGINT} 
     </select>
+    <select id="getStockUpDownInfos" resultType="com.async.stock.pojo.domain.StockUpdownDomain">
+        select
+            sri.trade_amount as tradeAmt,
+            sri.pre_close_price as preClosePrice,
+            (sri.max_price-sri.min_price)/sri.pre_close_price as amplitude,
+            sri.stock_code as code,
+            sri.stock_name as  name,
+            sri.cur_time as curDate,
+            sri.trade_volume as tradeVol,
+            sri.cur_price-sri.pre_close_price as increase,
+            (sri.cur_price-sri.pre_close_price) /pre_close_price as upDown,
+            sri.cur_price as tradePrice
+        from stock_rt_info as   sri
+        where sri.cur_time=#{timePoint}
+        order by upDown desc
+    </select>
 
-<!--    &lt;!&ndash; 查询指定时间范围内，股票价格上涨或下跌的次数 &ndash;&gt;-->
+    <!--    &lt;!&ndash; 查询指定时间范围内，股票价格上涨或下跌的次数 &ndash;&gt;-->
 <!--    <select id="getStockUpDownCount" resultType="com.async.stock.pojo.domain.StockUpdownDomain">-->
 <!--        &lt;!&ndash; 外层查询：分组统计每个时间点的股票价格变动次数 &ndash;&gt;-->
 <!--        select-->

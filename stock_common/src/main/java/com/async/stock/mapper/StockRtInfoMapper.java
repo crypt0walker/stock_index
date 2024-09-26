@@ -1,6 +1,7 @@
 package com.async.stock.mapper;
 
 //import com.async.stock.pojo.domain.StockUpdownDomain;
+import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.pojo.entity.StockRtInfo;
 import org.apache.ibatis.annotations.Param;
 
@@ -28,7 +29,7 @@ public interface StockRtInfoMapper {
 
     int updateByPrimaryKey(StockRtInfo record);
 
-//    List<StockUpdownDomain> getStockUpDownInfos(Date lastDate);
+    List<StockUpdownDomain> getStockUpDownInfos(Date lastDate);
 //
 //    List<Map> getStockUpDownCount(Date startTime, Date endTime, int i);
 

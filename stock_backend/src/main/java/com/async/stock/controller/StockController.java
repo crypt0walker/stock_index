@@ -1,10 +1,11 @@
 package com.async.stock.controller;
 
-import cn.hutool.db.PageResult;
 import com.async.stock.pojo.domain.InnerMarketDomain;
 //import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.pojo.domain.StockBlockDomain;
+import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.service.StockService;
+import com.async.stock.vo.resp.PageResult;
 import com.async.stock.vo.resp.R;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParam;
@@ -53,17 +54,17 @@ public class StockController {
     public R<List<StockBlockDomain>> sectorAll(){
         return stockService.sectorAllLimit();
     }
-//    @ApiOperation("分页降序查询最新的个股涨幅排数据")
-//    @ApiImplicitParams({
-//            @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
-//            @ApiImplicitParam(name = "pageSize", value = "每页大小", required = false, dataType = "Integer", paramType = "query")
-//    })
-//    @GetMapping("/stock/all")
-//    public R<PageResult<StockUpdownDomain>> getPageStockInfos(
-//            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
-//            @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
-//            return stockService.getPageStockInfos(page, pageSize);
-//        }
+    @ApiOperation("分页降序查询最新的个股涨幅排数据")
+    @ApiImplicitParams({
+            @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
+            @ApiImplicitParam(name = "pageSize", value = "每页大小", required = false, dataType = "Integer", paramType = "query")
+    })
+    @GetMapping("/stock/all")
+    public R<PageResult<StockUpdownDomain>> getPageStockInfos(
+            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+            @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
+            return stockService.getPageStockInfos(page, pageSize);
+        }
 
 //    @ApiOperation("统计最新交易日下股票在各个时间点涨跌停的数量")
 //    @GetMapping("/stock/updown/count")

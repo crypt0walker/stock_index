@@ -57,6 +57,18 @@
             解决方式：先通过dependencies标签下载资源，然后删除
         -->
         <dependencies>
+            <!--pageHelper场景依赖-->
+            <dependency>
+                <groupId>com.github.pagehelper</groupId>
+                <artifactId>pagehelper-spring-boot-starter</artifactId>
+                <version>${pagehelper-spring-boot-starter.version}</version>
+            </dependency>
+            <!-- 导出 excel -->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>easyexcel</artifactId>
+                <version>${easyExcel.version}</version>
+            </dependency>
             <!--引入springboot依赖-->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
