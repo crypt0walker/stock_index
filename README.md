@@ -3191,3 +3191,829 @@ http://127.0.0.1:8091/api/quot/sector/all
 前端页面：
 
 <img src="./images/image-20240925212233485.png" alt="image-20240925212233485" style="zoom:80%;" />
+
+
+
+# 八、股票涨幅模块
+
+## 1. 涨幅表更多数据功能
+
+### 1.1 业务分析
+
+#### 原型效果
+
+![image-20240926154359446](./images/image-20240926154359446.png)
+
+#### 功能分析
+
+功能描述：分页查询最新股票交易时间点下沪深两市个股行情数据，并根据涨幅降序排序展示
+
+服务路径：/api/quot/stock/all
+服务方法：GET
+请求参数：
+
+| 参数说明 | 参数名称 | 是否必须 | 数据类型 | 备注       |
+| :------- | -------- | -------- | -------- | ---------- |
+| 当前页   | page     | false    | Integer  | 默认值：1  |
+| 每页大小 | pageSize | false    | Integer  | 默认值：20 |
+
+响应数据格式：
+
+~~~json
+{
+    "code": 1,
+    "data": {
+        "totalRows": 46750,//总行数
+        "totalPages": 4675,//总页数
+        "pageNum": 2,//当前页
+        "pageSize": 10,//每页大小
+        "size": 10,//当前页大小
+        "rows": [
+            {
+                "tradeAmt": 4594802,//交易量
+                "preClosePrice": 18.78,//前收盘价
+                "amplitude": 0.059638,//振幅
+                "code": "000004",//股票编码
+                "name": "国华网安",//股票名称
+                "curDate": "2021-12-30 10:20",//当前日期
+                "tradeVol": 4594802,//交易金额
+                "increase": 0.039936,//涨跌
+                "upDown": 0.75,//涨幅
+                "tradePrice": 19.53//当前价格
+            },
+           //省略......
+        ]
+    }
+}
+~~~
+
+> 说明：
+>
+> 1.利用已经配置好的PageHelper分页插件；
+>
+> 2.相关参数：
+>
+> ​	涨跌：当前价-前收盘价
+> ​	涨幅：（当前价-前收盘价）/ 前收盘价 * 100%
+> ​	振幅：（最高成交价-最低成交价）/ 前收盘价 * 100%
+
+### 1.2 实体类封装
+
+#### 响应实体类
+
+在stock_common工程下封装查询行记录数据：StockBlockDomain
+
+```java
+package com.async.stock.pojo.domain;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.util.Date;
+
+/**
+ * 股票板块 domain
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@ApiModel(description = "股票板块信息") // Describes the model for Swagger UI
+public class StockBlockDomain {
+    /**
+     * 公司数量
+     */
+    @ApiModelProperty(value = "公司数量", example = "100") // Describes the property for Swagger UI
+    private Integer companyNum;
+
+    /**
+     * 交易量
+     */
+    @ApiModelProperty(value = "交易量", example = "1500")
+    private Long tradeAmt;
+
+    /**
+     * 板块编码
+     */
+    @ApiModelProperty(value = "板块编码", example = "XJH123")
+    private String code;
+
+    /**
+     * 平均价
+     */
+    @ApiModelProperty(value = "平均价格", example = "25.75")
+    private BigDecimal avgPrice;
+
+    /**
+     * 板块名称
+     */
+    @ApiModelProperty(value = "板块名称", example = "科技板块")
+    private String name;
+
+    /**
+     * 当前日期
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm")
+    @ApiModelProperty(value = "当前日期", example = "2022-02-28 15:30")
+    private Date curDate;
+
+    /**
+     * 交易金额
+     */
+    @ApiModelProperty(value = "交易金额", example = "100000.50")
+    private BigDecimal tradeVol;
+
+    /**
+     * 涨跌率
+     */
+    @ApiModelProperty(value = "涨跌率", example = "0.05")
+    private BigDecimal updownRate;
+}
+```
+
+#### 分页实体类
+
+分页实体类是前端响应对象，我们维护到stock_backend工程下即可；
+
+分页实体对象的数据来自分页PageInfo对象，所以我们在构造器中传入PageInfo直接转化即可：
+
+~~~java
+package com.itheima.stock.vo.resp;
+
+import com.github.pagehelper.PageInfo;
+import lombok.Data;
+import java.io.Serializable;
+import java.util.List;
+
+/**
+ * 分页工具类
+ */
+@Data
+public class PageResult<T> implements Serializable {
+    /**
+     * 总记录数
+     */
+    private Long totalRows;
+
+    /**
+     * 总页数
+     */
+    private Integer totalPages;
+
+    /**
+     * 当前第几页
+     */
+    private Integer pageNum;
+    /**
+     * 每页记录数
+     */
+    private Integer pageSize;
+    /**
+     * 当前页记录数
+     */
+    private Integer size;
+    /**
+     * 结果集
+     */
+    private List<T> rows;
+
+    /**
+     * 分页数据组装
+     * @param pageInfo
+     * @return
+     */
+    public PageResult(PageInfo<T> pageInfo) {
+        totalRows = pageInfo.getTotal();
+        totalPages = pageInfo.getPages();
+        pageNum = pageInfo.getPageNum();
+        pageSize = pageInfo.getPageSize();
+        size = pageInfo.getSize();
+        rows = pageInfo.getList();
+    }
+}
+~~~
+
+> 分页实体类维护到stock_backend下vo/resp下即可；
+>
+
+### 1.3 控制层
+
+服务层接口
+
+```java
+    /**
+     * 分页查询股票最新数据，并按照涨幅排序查询
+     * @param page
+     * @param pageSize
+     * @return
+     */
+@ApiOperation("分页降序查询最新的个股涨幅排数据")
+@ApiImplicitParams({
+        @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
+        @ApiImplicitParam(name = "pageSize", value = "每页大小", required = false, dataType = "Integer", paramType = "query")
+})
+@GetMapping("/stock/all")
+public R<PageResult<StockUpdownDomain>> getPageStockInfos(
+        @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+        @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
+    return stockService.getPageStockInfos(page, pageSize);
+}
+```
+
+此时`getPageStockInfos(page, pageSize)`尚未定义（服务层定义）
+
+### 1.4 服务层
+
+#### 服务层接口
+
+```java
+/**
+ * 分页降序查询最新的个股涨幅排数据
+ * @param page 当前页
+ * @param pageSize 每页大小
+ * @return
+ */
+R<PageResult<StockUpdownDomain>> getPageStockInfos(Integer page, Integer pageSize);
+```
+
+#### 服务层实现
+
+```java
+/**
+ * 分页降序查询最新的个股涨幅排数据
+ * @param page 当前页
+ * @param pageSize 每页大小
+ * @return
+ */
+@Override
+public R<PageResult<StockUpdownDomain>> getPageStockInfos(Integer page, Integer pageSize) {
+    //1.获取最新的股票交易时间
+    Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+    //TODO 伪造数据，后续删除
+    lastDate=DateTime.parse("2022-07-07 14:43:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+    //2.设置分页参数
+    PageHelper.startPage(page,pageSize);
+    //3.调用mapper查询数据
+    List<StockUpdownDomain> infos=stockRtInfoMapper.getStockUpDownInfos(lastDate);
+    //判断数据是否为空
+    if (CollectionUtils.isEmpty(infos)) {
+        return R.error(ResponseCode.NO_RESPONSE_DATA);
+    }
+    //3.组装数据
+    //转化成PageInfo对象
+    //PageInfo<StockUpdownDomain> pageInfo = new PageInfo<>(infos);
+    //利用infos初始化分页对象
+    PageResult<StockUpdownDomain> pageResult = new PageResult<>(new PageInfo<>(infos));
+    //4.响应数据
+    return R.ok(pageResult);
+}
+```
+
+此时`stockRtInfoMapper.getStockUpDownInfos(lastDate)`尚未定义
+
+
+
+### 1.5 sql分析
+
+#### 方式1：全表数据根据时间和涨幅降序排序
+
+```sql
+select 
+    sri.trade_amount as tradeAmt,
+    sri.pre_close_price as preClosePrice,
+    (sri.max_price - sri.min_price) / sri.pre_close_price as amplitude,
+    sri.stock_code as code,
+    sri.stock_name as name,
+    sri.cur_time as curDate,
+    sri.trade_volume as tradeVol,
+    (sri.cur_price - sri.pre_close_price) as upDown,
+    (sri.cur_price - sri.pre_close_price) / sri.pre_close_price as increase,
+    sri.cur_price as tradePrice
+from stock_rt_info as sri 
+order by sri.cur_time desc, upDown desc
+```
+
+**问题分析**:
+
+- **全表排序**：此查询需要全表扫描来排序数据，这在大数据集上非常耗时和资源密集。
+- **索引缺失**：如果没有适当的索引支持`cur_time`和`upDown`字段的排序，数据库将进行全表扫描，这在性能上是不可取的。
+
+#### 方式2：先根据最新股票交易时间点走索引查询，然后再根据涨幅排序
+
+```sql
+select 
+    sri.trade_amount as tradeAmt,
+    sri.pre_close_price as preClosePrice,
+    (sri.max_price - sri.min_price) / sri.pre_close_price as amplitude,
+    sri.stock_code as code,
+    sri.stock_name as name,
+    sri.cur_time as curDate,
+    sri.trade_volume as tradeVol,
+    (sri.cur_price - sri.pre_close_price) as upDown,
+    (sri.cur_price - sri.pre_close_price) / sri.pre_close_price as increase,
+    sri.cur_price as tradePrice
+from stock_rt_info as sri 
+where sri.cur_time = '2021-12-30 09:42:00'
+order by upDown desc
+```
+
+**优化点**:
+
+- **索引使用**：这种方法假定`cur_time`字段已经被索引，因此可以直接利用索引来快速过滤出特定时间点的数据，从而避免全表扫描。
+- **减少数据排序范围**：通过先过滤出特定时间点的数据，然后只对这些数据进行排序，大大减少了排序操作的数据量。
+
+**进一步优化建议**:
+
+1. **确认索引**：确保`cur_time`和`upDown`字段上存在索引，如果没有，应考虑添加。对`upDown`进行排序时，如果数据量大，也可能需要索引。
+2. **分析执行计划**：执行这些查询之前，查看它们的执行计划，确认是否有效使用了索引。
+3. **分区表**：如果`stock_rt_info`表数据量非常大，可以考虑分区策略，例如按日期分区，这样查询特定时间的数据时可以更快。
+4. **定期维护**：定期更新统计信息和重建索引，确保查询性能最优。
+
+通过实现方式2的策略，并结合上述优化建议，你可以显著提高SQL查询的效率，特别是在处理大规模数据时。
+
+### 1.6 持久层
+
+#### mapper接口
+
+```java
+    /**
+     * 根据指定的时间点查询股票数据
+     * @param timePoint
+     * @return
+     */
+    List<StockUpdownDomain> getStockUpDownInfos(@Param("timePoint") Date timePoint);
+```
+
+#### mapper.xml
+
+```xml
+<select id="getStockUpDownInfos" resultType="com.async.stock.pojo.domain.StockUpdownDomain">
+    select
+        sri.trade_amount as tradeAmt,
+        sri.pre_close_price as preClosePrice,
+        (sri.max_price-sri.min_price)/sri.pre_close_price as amplitude,
+        sri.stock_code as code,
+        sri.stock_name as  name,
+        sri.cur_time as curDate,
+        sri.trade_volume as tradeVol,
+        sri.cur_price-sri.pre_close_price as increase,
+        (sri.cur_price-sri.pre_close_price) /pre_close_price as upDown,
+        sri.cur_price as tradePrice
+    from stock_rt_info as   sri
+    where sri.cur_time=#{timePoint}
+    order by upDown desc
+</select>
+```
+
+### 1.7 测试
+
+```
+GET http://localhost:8091/api/quot/sector/all?page=3&pageSize=10
+```
+
+![image-20240926160844511](./images/image-20240926160844511.png)
+
+前端页面：
+
+![image-20240926160932789](./images/image-20240926160932789.png)
+
+## 2. 涨幅表大厅页面展示功能
+
+### 2.1 业务分析
+
+#### 2.1.1 涨幅榜原型效果
+
+![image-20240926162449565](./images/image-20240926162449565.png)
+
+#### 2.1.2 股票表结构分析
+
+表：stock_rt_info流水表：
+
+![image-20240926162509991](./images/image-20240926162509991.png)
+
+#### 2.1.3 涨幅榜功能分析
+
+功能描述：统计沪深两市个股最新交易数据，并按涨幅降序排序查询前4条数据 
+服务路径：/api/quot/stock/increase
+服务方法：GET
+前端请求频率：每分钟
+请求参数：无
+
+响应数据格式：
+
+```json
+{
+    "code": 1,
+    "data": [
+        {
+            "code": "000004",//股票编码
+            "name": "国华网安",//股票名称
+            "preClosePrice": 18.78,//前收盘价
+            "tradePrice": 19.53//当前价格
+             "tradeAmt": 4594802,//交易量
+            "tradeVol": 4594802,//交易金额
+            "increase": 0.039936,//涨跌
+            "upDown": 0.75,//涨幅
+            "amplitude": 0.059638,//振幅
+            "curDate": "2021-12-30 10:30",//当前日期
+        },
+       //省略......
+    ]
+}
+```
+
+
+
+#### 2.1.4 sql分析
+
+```sql
+select 
+	sri.stock_code as code,
+	sri.stock_name as name,
+	sri.pre_close_price as preClosePrice,
+	sri.cur_price as tradePrice,
+	sri.trade_amount as tradeAmt,
+	sri.trade_volume as tradeVol，
+	(sri.cur_price- sri.pre_close_price)/sri.pre_close_price as increase,
+	(sri.cur_price-sri.pre_close_price) as upDown,
+	(sri.max_price- sri.min_price)/sri.pre_close_price as amplitude,
+		sri.cur_time   as curDate
+from stock_rt_info as sri 
+where sri.cur_time='2021-12-30 09:42:00'
+order by upDown desc
+```
+
+#### 2.1.5 封装实体类
+
+直接使用已有的StockBlockDomain，因为数据都一样，只是顺序不同。
+
+
+
+### 3. 控制器层
+
+```java
+@ApiOperation("按照涨幅查询最新的4条个股涨幅数据")
+@GetMapping("/stock/increase")
+public R<PageResult<StockUpdownDomain>> getNewestStockInfos() {
+    return stockService.getNewestStockInfos();
+}
+```
+
+### 4. 服务层
+
+#### 服务接口
+
+```java
+/**
+ * 查询最新4条个股涨幅数据，按涨幅降序
+ * @return
+ */
+R<List<StockUpdownDomain>> getNewestStockInfos();
+```
+
+#### 服务实现
+
+```java
+@Override
+public R<List<StockUpdownDomain>> getNewestStockInfos() {
+    //1.获取最新的股票交易时间
+    Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+    //TODO 伪造数据，后续删除
+    lastDate=DateTime.parse("2022-07-07 14:43:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+    //2.调用mapper查询数据
+    List<StockUpdownDomain> infos=stockRtInfoMapper.getNewestStockUpDownInfos(lastDate);
+    //判断数据是否为空
+    if (CollectionUtils.isEmpty(infos)) {
+        return R.error(ResponseCode.NO_RESPONSE_DATA);
+    }
+    //3.响应数据
+    return R.ok(infos);
+}
+```
+
+### 5. 持久层
+
+#### mapper接口
+
+```java
+List<StockUpdownDomain> getNewestStockUpDownInfos(Date lastDate);
+```
+
+#### mapper.xml
+
+```xml
+<select id="getNewestStockUpDownInfos" resultType="com.async.stock.pojo.domain.StockUpdownDomain">
+    select
+        sri.stock_code as code,
+        sri.stock_name as name,
+        sri.pre_close_price as preClosePrice,
+        sri.cur_price as tradePrice,
+        sri.trade_amount as tradeAmt,
+        sri.trade_volume as tradeVol,
+        (sri.cur_price- sri.pre_close_price)/sri.pre_close_price as increase,
+            (sri.cur_price-sri.pre_close_price) as upDown,
+        (sri.max_price- sri.min_price)/sri.pre_close_price as amplitude,
+        sri.cur_time   as curDate
+    from stock_rt_info as sri
+    where sri.cur_time=#{timePoint}
+    order by upDown desc
+</select>
+```
+
+### 6. test
+
+```
+GET http://localhost:8091/api/quot/stock/increase
+```
+
+![image-20240926162810436](./images/image-20240926162810436.png)
+
+![image-20240926162828766](./images/image-20240926162828766.png)
+
+
+
+## 3. 个股涨停跌停数据统计功能
+
+### 3.1 涨跌停数据统计业务分析
+
+#### 3.1.1 涨跌停原型效果
+
+![image-20240926162922702](./images/image-20240926162922702.png)
+
+> 说明：
+>
+> A股市场有涨幅±10%限制；
+>
+> 股票是否涨停和跌停并不以我们的统计结果为基准，而是由证券交易所来确定，可能真实情况是涨幅超过10%或者低于-10%；
+
+#### 3.1.2 涨停跌停接口说明
+
+功能描述：统计沪深两市T日(当前股票交易日)每分钟达到涨跌停股票的数据 
+
+​		   注意：如果不在股票的交易日内，则统计最近的股票交易日下的数据
+
+服务路径：/api/quot/stock/updown/count
+服务方法：GET
+前端请求频率：每分钟
+请求参数：无
+
+响应数据格式：
+
+~~~json
+{
+    "code": 1,
+    "data": {
+        "upList": [
+            {
+                "count": 1,//涨停数量
+                "time": "202112311412"//当天分时
+            },
+           {
+                "count": 3,//涨停数量
+                "time": "202112311413"//当天分时
+            },
+          	//省略......
+        ],
+        "downList": [
+            {
+                "count": 2,//跌停数量
+                "time": "202112310925"//当天分时
+            },
+			//省略......
+        ]
+    }
+}
+~~~
+
+>  总之，业务要求获取最新交易日下每分钟达到涨跌停数股票的数量；
+>
+>  关于SQL日期函数，详见SQL日期函数.md
+
+### 3.1.3 T日涨跌停统计SQL分析
+
+~~~sql
+# 1.以统计当前股票交易日下，每分钟对应的涨停数量为例
+# 思考：涨停与涨幅有关，但是我们的股票流水表中没有涨幅的数据，需要自己去就是那
+# 1.先统计指定日期下（开盘时间点到最新时间点）涨幅达到涨停的数据
+# 查询后的条件过滤，使用关键字：having
+select
+    (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as ud,
+    sri.cur_time as time
+from stock_rt_info sri
+where sri.cur_time BETWEEN '2022-01-06 09:30:00' and '2022-01-06 14:25:00'
+having ud>=0.1;
+
+# 2.将上述结果作为一张表，然后根据time时间分组，统计出每分钟对应的数量，而这个数量就是涨停的数量
+select
+   tmp.time,
+   count(*) as count
+from () as tmp
+group by tmp.time;
+# 填充sql
+select
+   tmp.time,
+    count(*) as count
+from (select
+    (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as ud,
+    sri.cur_time as time
+from stock_rt_info sri
+where sri.cur_time BETWEEN '2022-01-06 09:30:00' and '2022-01-06 14:25:00'
+having ud>=0.1) as tmp
+group by tmp.time
+order by tmp.time asc;
+
+# 跌停
+select
+    date_format(tmp.time,'%Y%m%d%H%i') as time ,
+    count(*) as count
+from (select
+    (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as ud,
+    sri.cur_time as time
+from stock_rt_info sri
+where sri.cur_time BETWEEN '2022-01-06 09:30:00' and '2022-01-06 14:25:00'
+having ud<=-0.1) as tmp
+group by tmp.time
+order by tmp.time asc;
+~~~
+
+在涨跌停统计SQL分析中，涉及的SQL语句主要包括两部分：涨停统计和跌停统计。这些SQL语句的目的是从实时股票数据中抽取特定条件下的数据并进行聚合统计。下面我将详细解释每个部分的SQL语句。
+
+#### 涨停统计SQL解释
+
+```sql
+select
+    date_format(tmp.time, '%Y%m%d%H%i') as time,
+    count(*) as count
+from (
+    select
+        (sri.cur_price - sri.pre_close_price) / sri.pre_close_price as ud,
+        sri.cur_time as time
+    from stock_rt_info sri
+    where sri.cur_time BETWEEN '2022-01-06 09:30:00' and '2022-01-06 14:25:00'
+    having ud >= 0.1
+) as tmp
+group by tmp.time
+order by tmp.time asc;
+```
+
+##### 子查询部分
+
+- **字段选择**：计算每一条股票数据的涨幅 `ud`，使用当前价格 `cur_price` 减去前一交易日的收盘价格 `pre_close_price`，再除以 `pre_close_price` 得到涨幅百分比。
+- **时间筛选**：选择交易时间在指定日期（如2022年1月6日的开盘至收盘时间）之间的数据。
+- **条件过滤**：使用 `having` 子句过滤出涨幅达到或超过10%的数据记录。
+
+##### 主查询部分
+
+- **分组统计**：对子查询的结果按照时间 `time` 分组，并计算每个时间点对应的记录数（即涨停股票的数量）。
+- **时间格式化**：使用 `date_format` 函数格式化时间显示，以便更清晰地显示数据。
+- **排序**：结果按时间升序排序，确保数据的时序性和可读性。
+
+#### 跌停统计SQL解释
+
+```sql
+select
+    date_format(tmp.time, '%Y%m%d%H%i') as time,
+    count(*) as count
+from (
+    select
+        (sri.cur_price - sri.pre_close_price) / sri.pre_close_price as ud,
+        sri.cur_time as time
+    from stock_rt_info sri
+    where sri.cur_time BETWEEN '2022-01-06 09:30:00' and '2022-01-06 14:25:00'
+    having ud <= -0.1
+) as tmp
+group by tmp.time
+order by tmp.time asc;
+```
+
+此SQL结构与涨停统计类似，只是条件过滤的标准不同：
+
+- **条件过滤**：使用 `having` 子句过滤出跌幅达到或低于-10%的数据记录。
+
+这两个查询的目的都是以尽可能高效的方式从大量股票数据中提取关键信息，同时通过聚合和格式化，将数据准备好以便进行进一步的分析或可视化展示。
+
+### 3.1.4 查询数据组装思路
+
+- 涨跌停数据包含了涨停统计数据和跌停统计数据，而每个数据组中的元素又仅仅包含时间和数量，这些数据是高度聚合得出的结果，所以我们可以把每组数据封装到map下，数据类型为：Map<String,List<Map>>
+- 涨停统计SQL和跌停统计的SQL除了条件外，结构是一致的，我们可定义一个flag标识，mapper中传入时，0代表涨停，1代表跌停；
+
+
+### 3.2 控制层
+
+~~~java
+    /**
+     * 统计最新交易日下股票每分钟涨跌停的数量
+     * @return
+     */
+    @GetMapping("/stock/updown/count")
+    public R<Map> getStockUpdownCount(){
+        return stockService.getStockUpdownCount();
+    }
+~~~
+
+### 3.3 服务层
+
+服务接口定义：
+
+~~~java
+    /**
+     * 统计最新交易日下股票在各个时间点涨跌停的数量
+     * @return
+     */
+    R<Map<String, List>> getStockUpDownCount();
+~~~
+
+方法实现：
+
+~~~java
+    /**
+     * 统计最新交易日下股票在各个时间点涨跌停的数量
+     * @return
+     */
+    @Override
+    public R<Map<String, List>> getStockUpDownCount() {
+        //1.获取最新的股票交易时间范围：开盘到最新交易时间点
+        //统计最新交易时间，就是先获取最新交易时间点，然后再根据这个交易时间点获取开盘时间和收盘时间
+        //1.1 获取最新交易时间点，就是截止截止时间
+        DateTime endDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = endDateTime.toDate();
+        //假数据 todo
+        endTime=DateTime.parse("2022-01-06 14:25:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //1.2 获取开始时间
+        Date startTime = DateTimeUtil.getOpenDate(endDateTime).toDate();
+        //TODO 假数据
+        startTime=DateTime.parse("2022-01-06 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.定义flag标识 1：涨停 0：跌停
+        //3.分别统计涨停和跌停数据的集合
+        //3.1 统计涨停
+        List<Map> upList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,1);
+        //3.2 统计跌停
+        List<Map> downList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,0);
+        //4.组装数据
+        Map<String,List> infos=new HashMap();
+        infos.put("upList",upList);
+        infos.put("downList",downList);
+        //5.响应
+        return R.ok(infos);
+    }
+~~~
+
+### 3.4 持久层
+
+Mapper接口定义：
+
+~~~java
+    /**
+     * 查询指定时间范围内每分钟涨停或者跌停的数量
+     * @param startTime 开始时间
+     * @param endTime 结束时间 一般开始时间和结束时间在同一天
+     * @param flag 约定:1->涨停 0:->跌停
+     * @return
+     */
+    @MapKey("time")
+    List<Map> getStockUpDownCount(@Param("openTime") Date startTime, @Param("curTime") Date endTime, @Param("flag") int flag);
+
+~~~
+
+xml定义：
+
+~~~xml
+    <select id="getStockUpDownCount" resultType="map">
+        select
+        date_format(tmp.time,'%Y%m%d%H%i') as time ,
+        count(*) as count
+        from (select
+        (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as ud,
+        sri.cur_time as time
+        from stock_rt_info sri
+        where sri.cur_time BETWEEN #{openTime} and #{curTime}
+        having ud
+        <if test="flag==1">
+            >=0.1
+        </if>
+        <if test="flag==0">
+            &lt;=-0.1
+        </if>
+        )
+        as tmp
+        group by tmp.time
+        order by tmp.time asc
+    </select>
+~~~
+
+### 3.5 测试
+
+```
+GET http://localhost:8091/api/quot/stock/updown/count
+```
+
+![image-20240926163501655](./images/image-20240926163501655.png)
+
+<img src="./images/image-20240926163534203.png" alt="image-20240926163534203" style="zoom:80%;" />
+

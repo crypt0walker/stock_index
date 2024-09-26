@@ -36,12 +36,16 @@ public interface StockService {
      * @return
      */
     R<PageResult<StockUpdownDomain>> getPageStockInfos(Integer page, Integer pageSize);
-
+    /**
+     * 查询最新4条个股涨幅数据，按涨幅降序
+     * @return
+     */
+    R<List<StockUpdownDomain>> getNewestStockInfos();
     /**
      * 统计最新交易日下股票在各个时间点涨跌停的数量
      * @return
      */
-//    R<Map<String, List>> getStockUpDownCount();
+    R<Map<String, List>> getStockUpDownCount();
 //
 //    /**
 //     * 导致指定页码的股票涨幅数据到excel

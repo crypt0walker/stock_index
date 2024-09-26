@@ -54,6 +54,13 @@ public class StockController {
     public R<List<StockBlockDomain>> sectorAll(){
         return stockService.sectorAllLimit();
     }
+
+    /**
+     * 分页查询股票最新数据，并按照涨幅排序查询
+     * @param page
+     * @param pageSize
+     * @return
+     */
     @ApiOperation("分页降序查询最新的个股涨幅排数据")
     @ApiImplicitParams({
             @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
@@ -63,14 +70,20 @@ public class StockController {
     public R<PageResult<StockUpdownDomain>> getPageStockInfos(
             @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
             @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize) {
-            return stockService.getPageStockInfos(page, pageSize);
-        }
+        return stockService.getPageStockInfos(page, pageSize);
+    }
 
-//    @ApiOperation("统计最新交易日下股票在各个时间点涨跌停的数量")
-//    @GetMapping("/stock/updown/count")
-//    public R<Map<String,List>> getStockUpDownCount(){
-//        return stockService.getStockUpDownCount();
-//    }
+    @ApiOperation("按照涨幅查询最新的10条个股涨幅数据")
+    @GetMapping("/stock/increase")
+    public R<List<StockUpdownDomain>> getNewestStockInfos() {
+        return stockService.getNewestStockInfos();
+    }
+
+    @ApiOperation("统计最新交易日下股票在各个时间点涨跌停的数量")
+    @GetMapping("/stock/updown/count")
+    public R<Map<String,List>> getStockUpDownCount(){
+        return stockService.getStockUpDownCount();
+    }
 
 
 

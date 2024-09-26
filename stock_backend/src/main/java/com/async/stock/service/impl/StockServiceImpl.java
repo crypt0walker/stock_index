@@ -112,36 +112,52 @@ public class StockServiceImpl implements StockService {
         return R.ok(pageResult);
     }
 
+    @Override
+    public R<List<StockUpdownDomain>> getNewestStockInfos() {
+        //1.获取最新的股票交易时间
+        Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+        //TODO 伪造数据，后续删除
+        lastDate=DateTime.parse("2022-07-07 14:43:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.调用mapper查询数据
+        List<StockUpdownDomain> infos=stockRtInfoMapper.getNewestStockUpDownInfos(lastDate);
+        //判断数据是否为空
+        if (CollectionUtils.isEmpty(infos)) {
+            return R.error(ResponseCode.NO_RESPONSE_DATA);
+        }
+        //3.响应数据
+        return R.ok(infos);
+    }
+
     /**
      * 统计最新交易日下股票在各个时间点涨跌停的数量
      * @return
      */
-//    @Override
-//    public R<Map<String, List>> getStockUpDownCount() {
-//        //1.获取最新的股票交易时间范围：开盘到最新交易时间点
-//        //统计最新交易时间，就是先获取最新交易时间点，然后再根据这个交易时间点获取开盘时间和收盘时间
-//        //1.1 获取最新交易时间点，就是截止截止时间
-//        DateTime endDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
-//        Date endTime = endDateTime.toDate();
-//        //假数据 todo
-//        endTime=DateTime.parse("2022-01-06 14:25:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
-//        //1.2 获取开始时间
-//        Date startTime = DateTimeUtil.getOpenDate(endDateTime).toDate();
-//        //TODO 假数据
-//        startTime=DateTime.parse("2022-01-06 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
-//        //2.定义flag标识 1：涨停 0：跌停
-//        //3.分别统计涨停和跌停数据的集合
-//        //3.1 统计涨停
-//        List<Map> upList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,1);
-//        //3.2 统计跌停
-//        List<Map> downList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,0);
-//        //4.组装数据
-//        Map<String,List> infos=new HashMap();
-//        infos.put("upList",upList);
-//        infos.put("downList",downList);
-//        //5.响应
-//        return R.ok(infos);
-//    }
+    @Override
+    public R<Map<String, List>> getStockUpDownCount() {
+        //1.获取最新的股票交易时间范围：开盘到最新交易时间点
+        //统计最新交易时间，就是先获取最新交易时间点，然后再根据这个交易时间点获取开盘时间和收盘时间
+        //1.1 获取最新交易时间点，就是截止截止时间
+        DateTime endDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = endDateTime.toDate();
+        //假数据 todo
+        endTime=DateTime.parse("2022-01-06 14:25:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //1.2 获取开始时间
+        Date startTime = DateTimeUtil.getOpenDate(endDateTime).toDate();
+        //TODO 假数据
+        startTime=DateTime.parse("2022-01-06 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.定义flag标识 1：涨停 0：跌停
+        //3.分别统计涨停和跌停数据的集合
+        //3.1 统计涨停
+        List<Map> upList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,1);
+        //3.2 统计跌停
+        List<Map> downList=stockRtInfoMapper.getStockUpDownCount(startTime,endTime,0);
+        //4.组装数据
+        Map<String,List> infos=new HashMap();
+        infos.put("upList",upList);
+        infos.put("downList",downList);
+        //5.响应
+        return R.ok(infos);
+    }
 
     /**
      * 导致指定页码的股票涨幅数据到excel

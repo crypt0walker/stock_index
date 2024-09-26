@@ -3,6 +3,7 @@ package com.async.stock.mapper;
 //import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.pojo.entity.StockRtInfo;
+import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.Date;
@@ -29,24 +30,26 @@ public interface StockRtInfoMapper {
 
     int updateByPrimaryKey(StockRtInfo record);
 
-    List<StockUpdownDomain> getStockUpDownInfos(Date lastDate);
-//
-//    List<Map> getStockUpDownCount(Date startTime, Date endTime, int i);
+//    List<StockUpdownDomain> getStockUpDownInfos(Date lastDate);
+
+    List<StockUpdownDomain> getNewestStockUpDownInfos(Date lastDate);
+
+
 
     /**
      * 根据指定的时间点查询股票数据
      * @param timePoint
      * @return
      */
-//    List<StockUpdownDomain> getStockUpDownInfos(@Param("timePoint") Date timePoint);
-
+    List<StockUpdownDomain> getStockUpDownInfos(@Param("timePoint") Date timePoint);
     /**
-     * 查询指定日期范围内股票的涨停或者跌停的统计数量
-     * @param startTime 开始时间，一般是开盘时间
-     * @param endTime 截止时间
-     * @param flag 涨跌停表示，1：涨停 0：跌停
+     * 查询指定时间范围内每分钟涨停或者跌停的数量
+     * @param startTime 开始时间
+     * @param endTime 结束时间 一般开始时间和结束时间在同一天
+     * @param flag 约定:1->涨停 0:->跌停
      * @return
      */
-//    List<Map> getStockUpDownCount(@Param("startTime") Date startTime, @Param("endTime") Date endTime, @Param("flag") int flag);
+    @MapKey("time")
+    List<Map> getStockUpDownCount(@Param("openTime") Date startTime, @Param("curTime") Date endTime, @Param("flag") int flag);
 
 }
