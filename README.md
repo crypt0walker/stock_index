@@ -4017,3 +4017,415 @@ GET http://localhost:8091/api/quot/stock/updown/count
 
 <img src="./images/image-20240926163534203.png" alt="image-20240926163534203" style="zoom:80%;" />
 
+
+
+# 九、EasyExcel使用
+
+## 1、EasyExcel介绍
+
+### 1.1 官网介绍
+
+传统操作Excel大多都是利用Apach POI进行操作的，但是POI框架并不完善，使用过程非常繁琐且有较多的缺陷：
+
+- 动态操作Excel非常繁琐,对于新手来说，很难在短时间内上手;
+- 读写时需要占用较大的内存，当数据量大时容易发生内存溢出问题（OOM）;
+
+基于上述原因，阿里开源出一款易于上手，且比较节省内存的Excel框架：EasyExcel
+
+> 注意：easyExcel底层也是使用POI实现的；
+
+官网地址：https://www.yuque.com/easyexcel/doc/easyexcel
+
+依赖资源：
+
+```xml
+<!--引入easyexcel-->
+<dependency>
+    <groupId>com.alibaba</groupId>
+    <artifactId>easyexcel</artifactId>
+    <version>3.0.4</version>
+</dependency>
+```
+
+> 注意：目前版本与JDK8较为契合，高版本的JDK可能会出现兼容性问题;
+
+### 1.2 Excel相关结构说明
+
+![image-20240926171204525](./images/image-20240926171204525.png)
+
+## 2、EasyExcel导出数据快速入门
+
+### 2.1 构建测试实体类
+
+~~~java
+package com.async.stock.pojo.test;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+import java.util.Date;
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class TestEasyExcelUser {
+    private String userName;
+    private Integer age;
+    private String address;
+    private Date birthday;
+}
+
+~~~
+
+### 2.2 数据导出到excel
+
+~~~java
+package com.async.stock.pojo.test;
+import com.alibaba.excel.EasyExcel;
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+public class TestEasyExcel {
+
+    /**
+     * 初始化测试用户数据。
+     * 此方法创建一个列表，然后循环生成具体的用户数据。
+     * @return 返回包含十个用户信息的列表。
+     */
+    public List<TestEasyExcelUser> init(){
+        ArrayList<TestEasyExcelUser> users = new ArrayList<>();
+        // 循环创建十个用户数据
+        for (int i = 0; i < 10; i++) {
+            TestEasyExcelUser user = new TestEasyExcelUser();
+            user.setAddress("上海" + i);  // 设置用户的地址信息，这里以上海为基础增加编号
+            user.setUserName("张三" + i); // 设置用户的名字，编号递增
+            user.setBirthday(new Date()); // 设置用户的生日，这里使用当前日期
+            user.setAge(10 + i);          // 设置用户的年龄，从10岁开始递增
+            users.add(user);              // 将创建的用户对象添加到列表中
+        }
+        return users;  // 返回填充完毕的用户列表
+    }
+
+    /**
+     * 测试 EasyExcel 导出功能。
+     * 此方法使用 EasyExcel 的 API 来导出一个 Excel 文件。
+     */
+    @Test
+    public void test02(){
+        List<TestEasyExcelUser> users = init(); // 调用 init 方法获取用户数据
+        // 使用 EasyExcel 的 write 方法来写入数据
+        EasyExcel.write("H:\\Java\\project\\stock\\stock_parent\\stock_parent\\test\\TestEasyExcel.xls",
+                        TestEasyExcelUser.class)  // 指定文件路径和数据类模型
+                .sheet("用户信息")               // 创建并命名新的工作表为“用户信息”
+                .doWrite(users);                // 执行写操作，将用户数据列表写入Excel
+    }
+}
+
+~~~
+
+<img src="./images/image-20240926171311828.png" alt="image-20240926171311828" style="zoom:67%;" />
+
+### 2.3 导出数据高级设置
+
+- 自定义表头
+
+- 自定义日期格式
+- 设置单元格大小
+- 合并表头
+- 忽略指定表头信息
+
+~~~java
+package com.async.stock.pojo.test;
+import com.alibaba.excel.annotation.ExcelIgnore;
+import com.alibaba.excel.annotation.ExcelProperty;
+import com.alibaba.excel.annotation.format.DateTimeFormat;
+import com.alibaba.excel.annotation.write.style.ColumnWidth;
+import com.alibaba.excel.annotation.write.style.ContentRowHeight;
+import com.alibaba.excel.annotation.write.style.HeadRowHeight;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.io.Serializable;
+import java.util.Date;
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+//设置单元格大小
+@HeadRowHeight(value = 35) // 表头行高
+@ContentRowHeight(value = 25) // 内容行高
+@ColumnWidth(value = 50) // 列宽
+/**
+ * 通过注解自定义表头名称 注解添加排序规则，值越大 越靠近右边
+ */
+public class TestEasyExcelUser {
+    @ExcelProperty(value = {"用户基本信息","用户名"},index = 0)
+    private String userName;
+    @ExcelProperty(value = {"用户基本信息","年龄"},index = 1)
+    private Integer age;
+//    忽略指定表头信息
+    @ExcelIgnore
+    @ExcelProperty(value = {"用户基本信息","地址"} ,index = 2)
+    private String address;
+    @ExcelProperty(value = {"用户基本信息","生日"},index = 3)
+    //注意：日期格式注解由alibaba.excel提供
+    @DateTimeFormat("yyyy/MM/dd HH:mm")
+    private Date birthday;
+}
+
+
+~~~
+
+![image-20240926172406090](./images/image-20240926172406090.png)
+
+## 3、EasyExcel导入数据
+
+~~~java
+    /**
+     * excel数据格式必须与实体类定义一致，否则数据读取不到
+     */
+    @Test
+    public void readExcel(){
+        ArrayList<TestEasyExcelUser> users = new ArrayList<>();
+        //读取数据
+        EasyExcel.read("H:\\Java\\project\\stock\\stock_parent\\stock_parent\\test\\TestEasyExcel.xls", TestEasyExcelUser.class, new AnalysisEventListener<TestEasyExcelUser>() {
+//            @Override
+            public void invoke(TestEasyExcelUser o, AnalysisContext analysisContext) {
+                System.out.println(o);
+                users.add(o);
+            }
+//            @Override
+            public void doAfterAllAnalysed(AnalysisContext analysisContext) {
+                System.out.println("完成。。。。");
+            }
+        }).sheet().doRead();
+        System.out.println(users);
+    }
+~~~
+
+![image-20240926172901691](./images/image-20240926172901691.png)
+
+# 十、股票涨幅数据Excel导出功能
+
+## 1、涨幅榜数据导出功能分析
+
+### 1.1 原型效果
+
+通过点击【导出数据】按钮，将当前页的数据导出到excel下：
+
+![image-20240926172748347](./images/image-20240926172748347.png)
+
+### 1.2  数据导出接口说明
+
+功能说明：将分页涨幅榜下指定页码的数据导出到excel表格下
+请求地址：/api/quot/stock/export
+请求方式：GET
+
+请求参数：
+
+| 参数名称 | 参数说明 | 是否必须 | 数据类型 | 备注       |
+| :------- | -------- | -------- | -------- | ---------- |
+| 当前页   | page     | false    | Integer  | 默认值：1  |
+| 每页大小 | pageSize | false    | Integer  | 默认值：20 |
+
+响应：excel格式的文件流
+
+### 1.3 功能实现准备
+
+在stock_common工程下引入easyExcel依赖：
+
+~~~xml
+<!--引入easyExcel-->
+<dependency>
+  <groupId>com.alibaba</groupId>
+  <artifactId>easyexcel</artifactId>
+</dependency>
+~~~
+
+调整StockUpdownDomain实体类，加上注解：
+
+~~~java
+package com.async.stock.pojo.domain;
+
+import com.alibaba.excel.annotation.ExcelProperty;
+import com.alibaba.excel.annotation.format.DateTimeFormat;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.util.Date;
+
+/**
+ * @author by async
+ * @Date 2024/9/26
+ * @Description 股票涨跌信息
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@ApiModel("个股涨幅榜数据封装对象")
+public class StockUpdownDomain {
+    @ApiModelProperty("股票编码")
+    @ExcelProperty(value = {"股票涨幅信息统计表","股票编码"},index = 0)
+    private String code;
+
+    @ApiModelProperty("股票名称")
+    @ExcelProperty(value = {"股票涨幅信息统计表","股票名称"},index = 1)
+    private String name;
+
+    @ApiModelProperty("前收盘价格")
+    @ExcelProperty(value = {"股票涨幅信息统计表","前收盘价格"},index = 2)
+    private BigDecimal preClosePrice;
+
+    @ApiModelProperty("当前价格")
+    @ExcelProperty(value = {"股票涨幅信息统计表","当前价格"},index = 3)
+    private BigDecimal tradePrice;
+    @ApiModelProperty("涨跌值")
+    @ExcelProperty(value = {"股票涨幅信息统计表","涨跌值"},index = 4)
+    private BigDecimal increase;
+    @ApiModelProperty("涨幅")
+    @ExcelProperty(value = {"股票涨幅信息统计表","涨幅"},index = 5)
+    private BigDecimal upDown;
+    @ApiModelProperty("振幅")
+    @ExcelProperty(value = {"股票涨幅信息统计表","振幅"},index = 6)
+    private BigDecimal amplitude;
+    @ApiModelProperty("交易量")
+    @ExcelProperty(value = {"股票涨幅信息统计表","交易量"},index = 7)
+    private Long tradeAmt;
+    @ApiModelProperty("交易金额")
+    @ExcelProperty(value = {"股票涨幅信息统计表","交易金额"},index = 8)
+    private BigDecimal tradeVol;
+
+    /**
+     * 日期
+     */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm")//springmvc的注解-》json格式数据
+    @ApiModelProperty("交易时间")
+    @DateTimeFormat("yyyy-MM-dd HH:mm")
+    @ExcelProperty(value = {"股票涨幅信息统计表","交易时间"},index = 9)
+    private Date curDate;
+}
+
+~~~
+
+> 详见：**day03\资料\后端资料\easyExcel修饰\StockUpdownDomain.java**
+
+## 2、涨幅信息数据导出功能实现
+
+### 2.1 控制层：定义web访问方法
+
+~~~java
+    /**
+     * 将指定页的股票数据导出到excel表下
+     * @param response
+     * @param page  当前页
+     * @param pageSize 每页大小
+     */
+    @GetMapping("/stock/export")
+    public void stockExport(HttpServletResponse response,Integer page,Integer pageSize){
+         stockService.stockExport(response,page,pageSize);
+    }
+~~~
+
+### 2.2 定义服务接口及实现
+
+接口定义：
+
+~~~java
+    /**
+     * 将指定页的股票数据导出到excel表下
+     * @param response
+     * @param page  当前页
+     * @param pageSize 每页大小
+     */
+    void stockExport(HttpServletResponse response, Integer page, Integer pageSize);
+~~~
+
+接口实现：
+
+~~~java
+    /**
+     * 将指定页的股票数据导出到excel表下
+     * @param response
+     * @param page  当前页
+     * @param pageSize 每页大小
+     */
+    @Override
+    public void stockExport(HttpServletResponse response, Integer page, Integer pageSize) {
+        try {
+            //1.获取最近最新的一次股票有效交易时间点（精确分钟）
+            Date curDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+            //因为对于当前来说，我们没有实现股票信息实时采集的功能，所以最新时间点下的数据
+            //在数据库中是没有的，所以，先临时指定一个假数据,后续注释掉该代码即可
+            curDate=DateTime.parse("2022-01-05 09:47:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+            //2.设置分页参数 底层会拦截mybatis发送的sql，并动态追加limit语句实现分页
+            PageHelper.startPage(page,pageSize);
+            //3.查询
+            List<StockUpdownDomain> infos=stockRtInfoMapper.getAllStockUpDownByTime(curDate);
+            //如果集合为空，响应错误提示信息
+            if (CollectionUtils.isEmpty(infos)) {
+                //响应提示信息
+                RequestInfoUtil.setUtf8(response);
+                R<Object> r = R.error(ResponseCode.NO_RESPONSE_DATA);
+              	response.setContentType("application/json");
+                response.setCharacterEncoding("utf-8");
+                response.getWriter().write(new ObjectMapper().writeValueAsString(r));
+                return;
+            }
+            //设置响应excel文件格式类型
+            response.setContentType("application/vnd.ms-excel");
+            //2.设置响应数据的编码格式
+            response.setCharacterEncoding("utf-8");
+            //3.设置默认的文件名称
+            // 这里URLEncoder.encode可以防止中文乱码 当然和easyexcel没有关系
+            String fileName = URLEncoder.encode("stockRt", "UTF-8");
+            //设置默认文件名称：兼容一些特殊浏览器
+            response.setHeader("content-disposition", "attachment;filename=" + fileName + ".xlsx");
+            //4.响应excel流
+            EasyExcel
+                    .write(response.getOutputStream(),StockUpdownDomain.class)
+                    .sheet("股票信息")
+                    .doWrite(infos);
+        } catch (IOException e) {
+            e.printStackTrace();
+            log.info("当前导出数据异常，当前页：{},每页大小：{},异常信息：{}",page,pageSize,e.getMessage());
+        }
+    }
+~~~
+
+### 2.3 访问测试效果
+
+测试方式：
+
+```
+GET http://localhost:8091/api/quot/stock/export?
+    page=1&
+    pageSize=20
+```
+
+- 通过浏览器直接访问http://localhost/aip/quot/stock/export?page=1&pageSize=20，可直接获取——股票涨幅数据表格.xlsx文件
+- 通过前端点击按钮获取，则会获取其它名称的文件，因为前端对文件进行了重命名操作；
+
+<img src="./images/image-20240926173820218.png" alt="image-20240926173820218" style="zoom:50%;" />
+
+![image-20240926173708773](./images/image-20240926173708773.png)
+
+
+
+
+
+
+

@@ -87,18 +87,18 @@ public class StockController {
 
 
 
-//    @ApiOperation("导出指定页码的股票涨幅数据到Excel中")
-//    @ApiImplicitParams({
-//            @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
-//            @ApiImplicitParam(name = "pageSize", value = "每页大小", required = false, dataType = "Integer", paramType = "query")
-//    })
-//    @GetMapping("/stock/export")
-//    public void exportPageStockInfos(
-//            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
-//            @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize,
-//            HttpServletResponse response) {
-//        stockService.exportPageStockInfos(page,pageSize,response);
-//    }
+    @ApiOperation("导出指定页码的股票涨幅数据到Excel中")
+    @ApiImplicitParams({
+            @ApiImplicitParam(name = "page", value = "当前页", required = false, dataType = "Integer", paramType = "query"),
+            @ApiImplicitParam(name = "pageSize", value = "每页大小", required = false, dataType = "Integer", paramType = "query")
+    })
+    @GetMapping("/stock/export")
+    public void exportPageStockInfos(
+            @RequestParam(value = "page", required = false, defaultValue = "1") Integer page,
+            @RequestParam(value = "pageSize", required = false, defaultValue = "20") Integer pageSize,
+            HttpServletResponse response) {
+        stockService.exportPageStockInfos(page,pageSize,response);
+    }
 
 
 }

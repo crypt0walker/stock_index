@@ -46,12 +46,12 @@ public interface StockService {
      * @return
      */
     R<Map<String, List>> getStockUpDownCount();
-//
-//    /**
-//     * 导致指定页码的股票涨幅数据到excel
-//     * @param page
-//     * @param pageSize
-//     * @param response
-//     */
-//    void exportPageStockInfos(Integer page, Integer pageSize, HttpServletResponse response);
+
+    /**
+     * 导致指定页码的股票涨幅数据到excel
+     * @param page
+     * @param pageSize
+     * @param response
+     */
+    void exportPageStockInfos(Integer page, Integer pageSize, HttpServletResponse response);
 }
