@@ -54,6 +54,19 @@
         </foreach>
         and smi.cur_time=#{timePoint}          <!-- 并指定查询的具体时间点 -->
     </select>
+    <select id="getStockTradeVol" resultType="map">
+        select
+        date_format(smi.cur_time,'%Y%m%d%H%i') as time,
+        sum(smi.trade_amount)  as count
+        from stock_market_index_info as smi
+        where smi.market_code in
+        <foreach collection="markedIds" item="marketId" open="("  separator="," close=")">
+            #{marketId}
+        </foreach>
+        and smi.cur_time between #{startTime} and #{endTime}
+        group by smi.cur_time
+        order by time asc;
+    </select>
 
 
     <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">

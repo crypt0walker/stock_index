@@ -4425,7 +4425,215 @@ GET http://localhost:8091/api/quot/stock/export?
 
 
 
+# 十一、股票成交量对比功能
 
+## 1. 功能分析
 
+### 1.1 功能原型
 
+<img src="./images/image-20240926213729730.png" alt="image-20240926213729730" style="zoom:80%;" />
 
+### 1.2 相关表分析
+
+stock_market_index_info表结构相关字段：
+
+![image-20240926213808677](./images/image-20240926213808677.png)
+
+### 1.3 接口分析
+
+功能描述：统计A股大盘T日和T-1日成交量对比功能（成交量为沪深两市成交量之和）	
+
+服务路径：/api/quot/stock/tradeAmt
+服务方法：GET
+前端请求频率：每分钟
+请求参数：无
+
+![image-20240926213923936](./images/image-20240926213923936.png)
+
+返回数据格式：
+
+~~~json
+{
+    "code": 1,
+    "data": {
+        "amtList": [{"count": 3926392,"time": "202112310930"},{"count": 3926392,"time": "202112310931"}，...],//T日每分钟成交量信息
+        "yesAmtList":[{"count": 3926392,"time": "202112310930"},...]//T-1日每分钟成交量信息 
+	}
+}
+~~~
+
+> 注意事项：如果当前日期不在股票交易日，则按照前一个有效股票交易日作为T日查询
+>
+> R<Map<String,List<Map>>>
+
+### 1.4 sql分析
+
+~~~sql
+-- 思路：通过逻辑获取T日开盘时间和当前时间日期范围，ge: 2022-01-03 09:30:00 到 2022-01-03 14:40:00
+-- 那么T-1日日期范围则为：2022-01-02 09:30:00 到 2022-01-02 14:40:00
+-- 我们可分别统计T日和T-1日国内A股大盘交易量，然后再将数据组装即可
+-- 1.统计T日交易量数据信息（T-1日SQL结构一致）
+select
+	date_format(smi.cur_time,'%Y%m%d%H%i') as time,
+	sum(smi.trade_amount) as count
+from
+	stock_market_index_info as smi
+where
+	smi.cur_time between '2022-01-03 09:30:00' and '2022-01-03 14:40:00'
+and
+	smi.market_code in ('sh000001','sz399001')
+group by time
+order by smi.cur_time asc;
+-- SQL语句添加order by 保证查询的数据是按照日期排序
+~~~
+
+## 2. 控制层
+
+```java
+@ApiOperation("导出指定页码的股票涨幅数据到Excel中")
+@GetMapping("/stock/tradeAmt")
+public R<Map> stockTradeVol4InnerMarket(){
+    return stockService.stockTradeVol4InnerMarket();
+}
+```
+
+## 3. 服务层
+
+接口：
+
+```java
+/**
+ * 功能描述：统计国内A股大盘T日和T-1日成交量对比功能（成交量为沪市和深市成交量之和）
+ * @return
+ */
+R<Map> stockTradeVol4InnerMarket();
+```
+
+实现：多用之前实现过的股票日期工具类
+
+```java
+@Override
+public R<Map> stockTradeVol4InnerMarket() {
+    //1.获取当前时间cur_time、当前日期T。如果当前未开市则获取前一个开市日日期，时间设置为最后。
+    //1.获取T日和T-1日的开始时间和结束时间
+    //1.1 获取最近股票有效交易时间点--T日时间范围
+    DateTime lastDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+    DateTime openDateTime = DateTimeUtil.getOpenDate(lastDateTime);
+    //转化成java中Date,这样jdbc默认识别
+    Date startTime4T = openDateTime.toDate();
+    Date endTime4T=lastDateTime.toDate();
+    //TODO  mock数据
+    startTime4T=DateTime.parse("2022-01-03 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+    endTime4T=DateTime.parse("2022-01-03 14:40:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+    //1.2 获取T-1日的区间范围
+    //获取lastDateTime的上一个股票有效交易日
+    DateTime preLastDateTime = DateTimeUtil.getPreviousTradingDay(lastDateTime);
+    DateTime preOpenDateTime = DateTimeUtil.getOpenDate(preLastDateTime);
+    //转化成java中Date,这样jdbc默认识别
+    Date startTime4PreT = preOpenDateTime.toDate();
+    Date endTime4PreT=preLastDateTime.toDate();
+    //TODO  mock数据
+    startTime4PreT=DateTime.parse("2022-01-02 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+    endTime4PreT=DateTime.parse("2022-01-02 14:40:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+    //2.获取上证和深证的配置的大盘id
+    //2.1 获取大盘的id集合
+    List<String> markedIds = stockInfoConfig.getInner();
+    //3.分别查询T日和T-1日的交易量数据，得到两个集合
+    //3.1 查询T日大盘交易统计数据
+    List<Map> data4T=stockMarketIndexInfoMapper.getStockTradeVol(markedIds,startTime4T,endTime4T);
+    if (CollectionUtils.isEmpty(data4T)) {
+        data4T=new ArrayList<>();
+    }
+    //3.2 查询T-1日大盘交易统计数据
+    List<Map> data4PreT=stockMarketIndexInfoMapper.getStockTradeVol(markedIds,startTime4PreT,endTime4PreT);
+    if (CollectionUtils.isEmpty(data4PreT)) {
+        data4PreT=new ArrayList<>();
+    }
+    //4.组装响应数据
+    HashMap<String, List> info = new HashMap<>();
+    info.put("amtList",data4T);
+    info.put("yesAmtList",data4PreT);
+    //5.返回数据
+    return R.ok(info);
+}
+```
+
+## 4. 持久层
+
+mapper接口：
+
+```java
+/**
+ * 根据时间范围和指定的大盘id统计每分钟的交易量
+ * @param markedIds 大盘id集合
+ * @param startTime 交易开始时间
+ * @param endTime 结束时间
+ * @return
+ */
+@MapKey("markedIds")
+List<Map> getStockTradeVol(@Param("markedIds") List<String> markedIds,
+                           @Param("startTime") Date startTime,
+                           @Param("endTime") Date endTime);
+```
+
+mapper.xml:
+
+```xml
+<select id="getStockTradeVol" resultType="map">
+    select
+    date_format(smi.cur_time,'%Y%m%d%H%i') as time,
+    sum(smi.trade_amount)  as count
+    from stock_market_index_info as smi
+    where smi.market_code in
+    <foreach collection="markedIds" item="marketId" open="("  separator="," close=")">
+        #{marketId}
+    </foreach>
+    and smi.cur_time between #{startTime} and #{endTime}
+    group by smi.cur_time
+    order by time asc;
+</select>
+```
+
+### @MapKey注解
+
+在 MyBatis 中，`@MapKey` 注解用于指定用于map结果类型中的键值对中的键（key）。当你期望从数据库查询返回一个 `Map` 类型的集合时，你可以使用 `@MapKey` 来指定哪个字段的值应该作为map中的键。
+
+这里是它的一些使用场景和解释：
+
+#### 场景
+
+假设你有一个查询方法，返回的是一个包含多个结果的列表，每个结果项是一个实体类的对象，比如用户信息。如果你想将这些结果转换成一个 `Map`，其中包含特定字段（比如用户ID）作为键，整个对象作为值，你就可以使用 `@MapKey` 来实现这一点。
+
+#### 用法
+
+```java
+@MapKey("id")
+Map<Integer, User> getAllUsers();
+```
+在上面的例子中，`getAllUsers()` 方法将返回一个 `Map`，其中键是用户的 ID（从 `User` 对象的 `id` 属性取得），值是对应的 `User` 对象。
+
+#### 为什么使用 @MapKey
+
+在不使用 `@MapKey` 的情况下，如果你想通过某个特定的属性来快速访问对象，通常需要手动构建这样的 `Map`。通过使用 `@MapKey`，MyBatis 为你自动完成这一过程，简化了代码并减少了错误的可能性。
+
+#### 示例中的应用
+
+在你的查询中：
+```java
+List<Map> getStockUpDownCount(@Param("openTime") Date openTime, @Param("curTime") Date endTime, @Param("flag") int flag);
+```
+如果你想要让每个 `Map` 的键是某个特定字段（例如时间戳），就需要在方法前加上 `@MapKey("time")`（假设 `time` 是返回结果中的一个字段），这样返回的就是 `Map<String, Map>`，其中每个键是 `time` 字段的值，而值则是包含其他数据的 `Map`。
+
+这种方式特别适合当你需要根据某个字段（如时间点）快速检索信息时，可以大大提高数据访问的效率。
+
+## 5. 测试
+
+```
+GET http://localhost:8091/api/quot/stock/tradeAmt
+```
+
+![image-20240926220358791](./images/image-20240926220358791.png)
+
+<img src="./images/image-20240926220421172.png" alt="image-20240926220421172" style="zoom:50%;" />

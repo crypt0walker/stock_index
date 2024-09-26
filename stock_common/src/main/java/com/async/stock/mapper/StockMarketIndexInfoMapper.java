@@ -2,10 +2,12 @@ package com.async.stock.mapper;
 
 import com.async.stock.pojo.domain.InnerMarketDomain;
 import com.async.stock.pojo.entity.StockMarketIndexInfo;
+import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 /**
 * @author 16232
@@ -36,4 +38,16 @@ public interface StockMarketIndexInfoMapper {
      * @return
      */
     List<InnerMarketDomain> getMarketInfo(@Param("marketIds") List<String> marketIds, @Param("timePoint") Date timePoint);
+
+    /**
+     * 根据时间范围和指定的大盘id统计每分钟的交易量
+     * @param markedIds 大盘id集合
+     * @param startTime 交易开始时间
+     * @param endTime 结束时间
+     * @return
+     */
+    @MapKey("markedIds")
+    List<Map> getStockTradeVol(@Param("markedIds") List<String> markedIds,
+                               @Param("startTime") Date startTime,
+                               @Param("endTime") Date endTime);
 }

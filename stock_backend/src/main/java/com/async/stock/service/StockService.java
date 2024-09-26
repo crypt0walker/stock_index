@@ -54,4 +54,9 @@ public interface StockService {
      * @param response
      */
     void exportPageStockInfos(Integer page, Integer pageSize, HttpServletResponse response);
+    /**
+     * 功能描述：统计国内A股大盘T日和T-1日成交量对比功能（成交量为沪市和深市成交量之和）
+     * @return
+     */
+    R<Map> stockTradeVol4InnerMarket();
 }

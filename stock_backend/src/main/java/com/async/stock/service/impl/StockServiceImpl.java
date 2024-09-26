@@ -26,10 +26,7 @@ import org.springframework.util.CollectionUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.net.URLEncoder;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * @author : itheima
@@ -201,5 +198,52 @@ public class StockServiceImpl implements StockService {
         } catch (Exception e) {
             log.error("导出时间：{},当初页码：{}，导出数据量：{}，发生异常信息：{}",lastDate,page,pageSize,e.getMessage());
         }
+    }
+
+    @Override
+    public R<Map> stockTradeVol4InnerMarket() {
+        //1.获取当前时间cur_time、当前日期T。如果当前未开市则获取前一个开市日日期，时间设置为最后。
+        //1.获取T日和T-1日的开始时间和结束时间
+        //1.1 获取最近股票有效交易时间点--T日时间范围
+        DateTime lastDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        DateTime openDateTime = DateTimeUtil.getOpenDate(lastDateTime);
+        //转化成java中Date,这样jdbc默认识别
+        Date startTime4T = openDateTime.toDate();
+        Date endTime4T=lastDateTime.toDate();
+        //TODO  mock数据
+        startTime4T=DateTime.parse("2022-01-03 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        endTime4T=DateTime.parse("2022-01-03 14:40:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+        //1.2 获取T-1日的区间范围
+        //获取lastDateTime的上一个股票有效交易日
+        DateTime preLastDateTime = DateTimeUtil.getPreviousTradingDay(lastDateTime);
+        DateTime preOpenDateTime = DateTimeUtil.getOpenDate(preLastDateTime);
+        //转化成java中Date,这样jdbc默认识别
+        Date startTime4PreT = preOpenDateTime.toDate();
+        Date endTime4PreT=preLastDateTime.toDate();
+        //TODO  mock数据
+        startTime4PreT=DateTime.parse("2022-01-02 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        endTime4PreT=DateTime.parse("2022-01-02 14:40:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+        //2.获取上证和深证的配置的大盘id
+        //2.1 获取大盘的id集合
+        List<String> markedIds = stockInfoConfig.getInner();
+        //3.分别查询T日和T-1日的交易量数据，得到两个集合
+        //3.1 查询T日大盘交易统计数据
+        List<Map> data4T=stockMarketIndexInfoMapper.getStockTradeVol(markedIds,startTime4T,endTime4T);
+        if (CollectionUtils.isEmpty(data4T)) {
+            data4T=new ArrayList<>();
+        }
+        //3.2 查询T-1日大盘交易统计数据
+        List<Map> data4PreT=stockMarketIndexInfoMapper.getStockTradeVol(markedIds,startTime4PreT,endTime4PreT);
+        if (CollectionUtils.isEmpty(data4PreT)) {
+            data4PreT=new ArrayList<>();
+        }
+        //4.组装响应数据
+        HashMap<String, List> info = new HashMap<>();
+        info.put("amtList",data4T);
+        info.put("yesAmtList",data4PreT);
+        //5.返回数据
+        return R.ok(info);
     }
 }

@@ -100,5 +100,11 @@ public class StockController {
         stockService.exportPageStockInfos(page,pageSize,response);
     }
 
+    @ApiOperation("导出指定页码的股票涨幅数据到Excel中")
+    @GetMapping("/stock/tradeAmt")
+    public R<Map> stockTradeVol4InnerMarket(){
+        return stockService.stockTradeVol4InnerMarket();
+    }
+
 
 }
