@@ -4637,3 +4637,639 @@ GET http://localhost:8091/api/quot/stock/tradeAmt
 ![image-20240926220358791](./images/image-20240926220358791.png)
 
 <img src="./images/image-20240926220421172.png" alt="image-20240926220421172" style="zoom:50%;" />
+
+# 十二、个股分时涨跌幅度统计功能
+
+## 1、功能分析
+
+### 1.1 功能原型
+
+功能说明：统计当前时间下（精确到分钟），A股在各个涨跌区间股票的数量；
+
+>  股票涨跌幅区间定义: "<-7%" 、 "-7~-5%"、 "-5~-3%" 、 "-3~0%" 、"0~3%" 、 "3~5%" 、 "5~7%" 、 ">7%"
+
+
+
+<img src="./images/image-20240927154251774.png" alt="image-20240927154251774" style="zoom: 33%;" />
+
+### 1.2 功能接口说明
+
+功能描述：统计当前时间下（精确到分钟），A股在各个涨跌区间股票的数量；
+服务路径：/api/quot/stock/updown
+服务方法：GET
+前端请求频率：每分钟
+请求参数：无
+
+> 注意事项：如果当前不在股票有效时间内，则以最近最新的一个有效股票交易日作为查询时间点展示；
+
+响应数据格式：
+
+~~~json
+{
+    "code": 1,
+    "data": {
+        "time": "2021-12-31 14:58:00",
+        "infos": [
+            {
+                "count": 17,
+                "title": "-3~0%"
+            },
+            {
+                "count": 2,
+                "title": "-5~-3%"
+            },
+			//省略......
+        ]
+    }
+}
+~~~
+
+### 1.3 功能SQL分析
+
+![image-20240927154431495](./images/image-20240927154431495.png)
+
+## 2、涨跌幅度统计SQL实现
+
+分析：三步走，嵌套查询
+
+1. 查询当前时间下每只股票的涨跌值
+2. 将之前查询的结果转换未不同区间的集合
+3. 根据区间分组，统计各个区间数据量
+
+~~~sql
+-- 整体思路：先统计当前时间点下每支股票的涨幅和时间集合，然后再将结果子查询将涨幅值转换成涨幅区间名称，
+-- 最后再根据涨幅区间分组统计每一组对应的数量即可
+-- 步骤1：统计当前时间下，每只股票的涨幅值
+select
+	( sri.cur_price - sri.pre_close_price )/ sri.pre_close_price as rate 
+from
+	stock_rt_info as sri 
+where
+	sri.cur_time = '2022-01-06 09:55:00'
+-- 步骤2：将步骤1的查询结果中数据转换为区间范围集合
+select
+		CASE
+			WHEN tmp.rate > 0.07 THEN  '>7%'
+			WHEN tmp.rate > 0.05  AND tmp.rate <= 0.07 THEN '5~7%'
+			WHEN tmp.rate > 0.03  AND tmp.rate <= 0.05 THEN '3~5%'
+			WHEN tmp.rate > 0     AND tmp.rate <= 0.03 THEN '0~3%'
+			WHEN tmp.rate > -0.03 AND tmp.rate <= 0 THEN '-3~0%'
+			WHEN tmp.rate > -0.05 AND tmp.rate <= -0.03 THEN '-5~-3%'
+			WHEN tmp.rate > -0.07 AND tmp.rate <= -0.05 THEN '-7~-5%'
+			ELSE '<-7%'
+		END 'title'
+from
+	(
+		select
+			(sri.cur_price-sri.pre_close_price)/sri.pre_close_price as rate
+		from stock_rt_info as sri
+		where sri.cur_time='2022-01-06 09:55:00'
+	)as tmp
+-- 根据区间分组，统计各个区间数据量
+select
+	tmp2.title,
+	count(*) as count
+from
+(select
+	CASE
+		WHEN tmp.rate > 0.07 THEN  '>7%'
+		WHEN tmp.rate > 0.05 AND tmp.rate <= 0.07 THEN '5~7%'
+		WHEN tmp.rate > 0.03 AND tmp.rate <= 0.05 THEN '3~5%'
+		WHEN tmp.rate > 0 AND tmp.rate <= 0.03 THEN '0~3%'
+		WHEN tmp.rate > -0.03 AND tmp.rate <= 0 THEN '-3~0%'
+		WHEN tmp.rate > -0.05 AND tmp.rate <= -0.03 THEN '-5~-3%'
+		WHEN tmp.rate > -0.07 AND tmp.rate <= -0.05 THEN '-7~-5%'
+		ELSE '<-7%'
+	END 'title'
+from
+(select
+(sri.cur_price-sri.pre_close_price)/sri.pre_close_price as rate
+from stock_rt_info as sri
+where sri.cur_time='2022-01-06 09:55:00')
+as tmp)
+as tmp2 group by tmp2.title;
+~~~
+
+## 3、功能实现
+
+### 3.1 控制层
+
+~~~java
+    /**
+     * 查询当前时间下股票的涨跌幅度区间统计功能
+     * 如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询点
+     * @return
+     */
+    @ApiOperation(("查询当前时间下股票的涨跌幅度区间统计功能"))
+    @GetMapping("/stock/updown")
+    public R<Map> getStockUpDown(){
+        return stockService.stockUpDownScopeCount();
+    }
+~~~
+
+### 3.2 服务层
+
+定义服务接口：
+
+~~~java
+    /**
+     * 查询当前时间下股票的涨跌幅度区间统计功能
+     * 如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询点
+     * @return
+     */
+     R<Map> stockUpDownScopeCount();
+~~~
+
+定义实现：
+
+~~~java
+    /**
+     * 功能描述：统计在当前时间下（精确到分钟），股票在各个涨跌区间的数量
+     *  如果当前不在股票有效时间内，则以最近的一个有效股票交易时间作为查询时间点；
+     * @return
+     *  响应数据格式：
+     *  {
+     *     "code": 1,
+     *     "data": {
+     *         "time": "2021-12-31 14:58:00",
+     *         "infos": [
+     *             {
+     *                 "count": 17,
+     *                 "title": "-3~0%"
+     *             },
+     *             //...
+     *             ]
+     *     }
+     */
+    @Override
+    public R<Map> stockUpDownScopeCount() {
+        //1.获取股票最新一次交易的时间点
+        Date curDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+        //mock data
+        curDate=DateTime.parse("2022-01-06 09:55:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.查询股票信息
+        List<Map> maps=stockRtInfoMapper.getStockUpDownSectionByTime(curDate);
+        //3.组装数据
+        HashMap<String, Object> mapInfo = new HashMap<>();
+        //获取指定日期格式的字符串
+        String curDateStr = new DateTime(curDate).toString(DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"));
+        mapInfo.put("time",curDateStr);
+        mapInfo.put("infos",maps);
+        //4.返回数据
+        return R.ok(mapInfo);
+    }
+~~~
+
+### 3.3 持久层
+
+mapper接口方法定义
+
+~~~java
+    /**
+     * 统计指定时间点下，各个涨跌区间内股票的个数
+     * @param avlDate
+     * @return
+     */
+    @MapKey("UpDownSection")
+    List<Map> getStockUpDownSectionByTime(@Param("avlDate") Date avlDate);
+~~~
+
+xml定义：
+
+~~~xml
+<select id="getStockUpDownSectionByTime" resultType="java.util.Map">
+        select
+            tmp2.title,
+            count(*) as count
+        from
+            (select
+                 CASE
+                     WHEN tmp.rate > 0.07 THEN  '>7%'
+                     WHEN tmp.rate > 0.05 AND tmp.rate &lt;= 0.07 THEN '5~7%'
+                     WHEN tmp.rate > 0.03 AND tmp.rate &lt;= 0.05 THEN '3~5%'
+                     WHEN tmp.rate > 0 AND tmp.rate &lt;= 0.03 THEN '0~3%'
+                     WHEN tmp.rate > -0.03 AND tmp.rate &lt;= 0 THEN '-3~0%'
+                     WHEN tmp.rate > -0.05 AND tmp.rate &lt;= -0.03 THEN '-5~-3%'
+                     WHEN tmp.rate > -0.07 AND tmp.rate &lt;= -0.05 THEN '-7~-5%'
+                     ELSE '&lt;-7%'
+                     END 'title'
+             from
+                 (select
+                      (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as rate
+                  from stock_rt_info as sri
+                  where sri.cur_time=#{avlDate})
+                     as tmp)
+                as tmp2
+        group by tmp2.title
+    </select>
+~~~
+
+**大量的转义符书写非常麻烦？**
+
+如果在XML中SQL语句遇到大量特殊字符需要转义，比如：< 等，建议使用**<![CDATA[ sql 语句 ]]>**标记，这样特殊字符就不会被解析器解析，所以最终xml方式：
+
+~~~xml
+<select id="stockUpDownScopeCount" resultType="java.util.Map">
+    <![CDATA[
+        select
+            tmp2.title,
+            count(*) as count
+        from
+            (select
+            CASE
+            WHEN tmp.rate > 0.07 THEN  '>7%'
+            WHEN tmp.rate > 0.05 AND tmp.rate <= 0.07 THEN '5~7%'
+            WHEN tmp.rate > 0.03 AND tmp.rate <= 0.05 THEN '3~5%'
+            WHEN tmp.rate > 0 AND tmp.rate <= 0.03 THEN '0~3%'
+            WHEN tmp.rate > -0.03 AND tmp.rate <= 0 THEN '-3~0%'
+            WHEN tmp.rate > -0.05 AND tmp.rate <= -0.03 THEN '-5~-3%'
+            WHEN tmp.rate > -0.07 AND tmp.rate <= -0.05 THEN '-7~-5%'
+            ELSE '<-7%'
+            END 'title'
+            from
+            (select
+            (sri.cur_price-sri.pre_close_price)/sri.pre_close_price as rate
+            from stock_rt_info as sri
+            where sri.cur_time=#{avlDate})
+            as tmp)
+            as tmp2 group by tmp2.title
+    ]]>
+</select>
+~~~
+
+### 3.4 功能测试
+
+```
+GET http://localhost:8091/api/quot/stock/updown
+```
+
+![image-20240927161057461](./images/image-20240927161057461.png)
+
+页面展示效果：
+
+<img src="./images/image-20240927161156804.png" alt="image-20240927161156804" style="zoom:50%;" />
+
+## 4、股涨幅幅度排序优化
+
+### 4.1 分析问题
+
+- 前端查询的数据是无序展示的，涨幅区间应该从小到大顺序展示;
+- 当前涨幅区间下如果没有对应的股票，则区间标题不会被展示，我们需要对无数据的区间默认为0给前端显示；
+- 最终效果
+
+<img src="./images/image-20240927161548195.png" alt="image-20240927161548195" style="zoom:50%;" />
+
+### 4.2 实现思路分析
+
+![image-20240927161606785](./images/image-20240927161606785.png)
+
+> 说明：
+>
+> 1.先顺序定义一个包含区间范围标题的有序集合；
+>
+> 2.遍历有序集合，然后从实际查询结果中找出各自的区间值，如果没有则以0补齐；
+>
+> 3.遍历过程形成新的集合，包可以顺序性保证数据有序且完整；
+
+### 4.3 顺序定义股票涨幅范围集合
+
+在application-stock.yml中顺序添加股票涨幅区间信息：
+
+~~~yaml
+# 配置股票相关的参数
+stock:
+  upDownRange:
+    - "<-7%"
+    - "-7~-5%"
+    - "-5~-3%"
+    - "-3~0%"
+    - "0~3%"
+    - "3~5%"
+    - "5~7%"
+    - ">7%"
+~~~
+
+> 说明：yml中顺序定义区间范围值，这样加载到内存时也可保证其顺序性；
+
+### 4.4 完善实体类
+
+在stock_common工程下为StockInfoConfig类补齐配置：
+
+~~~java
+@Data
+@ConfigurationProperties(prefix = "stock")
+public class StockInfoConfig {
+    //a股大盘ID集合
+    private List<String> inner;
+    //外盘ID集合
+    private List<String> outer;
+    //股票区间
+    private List<String> upDownRange;
+}
+~~~
+
+### 4.5 完善过滤实现
+
+~~~java
+    /**
+     * 查询当前时间下股票的涨跌幅度区间统计功能
+     * 如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询点
+     * @return
+     */
+    @Override
+    public R<Map> stockUpDownScopeCount() {
+        //1.获取股票最新一次交易的时间点
+        Date curDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+        //mock data
+        curDate=DateTime.parse("2022-01-06 09:55:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.查询股票信息
+        List<Map> maps=stockRtInfoMapper.getStockUpDownSectionByTime(curDate);
+        //2.1 获取有序的标题集合
+        List<String> orderSections = stockInfoConfig.getUpDownRange();
+        //思路：利用List集合的属性，然后顺序编译，找出每个标题对应的map，然后维护到一个新的List集合下即可
+//        List<Map> orderMaps =new ArrayList<>();
+//        for (String title : orderSections) {
+//            Map map=null;
+//            for (Map m : maps) {
+//                if (m.containsValue(title)) {
+//                    map=m;
+//                    break;
+//                }
+//            }
+//            if (map==null) {
+//                map=new HashMap();
+//                map.put("count",0);
+//                map.put("title",title);
+//            }
+//            orderMaps.add(map);
+//        }
+        //方式2：使用lambda表达式指定
+        List<Map> orderMaps  =  orderSections.stream().map(title->{
+            Map mp=null;
+            Optional<Map> op = maps.stream().filter(m -> m.containsValue(title)).findFirst();
+            //判断是否存在符合过滤条件的元素
+            if (op.isPresent()) {
+                mp=op.get();
+            }else{
+                mp=new HashMap();
+                mp.put("count",0);
+                mp.put("title",title);
+            }
+            return mp;
+        }).collect(Collectors.toList());
+        //3.组装数据
+        HashMap<String, Object> mapInfo = new HashMap<>();
+        //获取指定日期格式的字符串
+        String curDateStr = new DateTime(curDate).toString(DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"));
+        mapInfo.put("time",curDateStr);
+        mapInfo.put("infos",orderMaps);
+        //4.返回数据
+        return R.ok(mapInfo);
+    }
+~~~
+
+<img src="./images/image-20240927162125087.png" alt="image-20240927162125087" style="zoom:50%;" />
+
+# 十三、股票行情分时图功能
+
+## 1. 功能分析
+
+### 1.1 功能原型
+
+![image-20240927162458773](./images/image-20240927162458773.png)
+
+![image-20240927162510641](./images/image-20240927162510641.png)
+
+
+
+### 1.2 接口分析
+
+功能描述：查询个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+服务路径：/api/quot/stock/screen/time-sharing
+服务方法：GET
+前端请求频率：每分钟请求
+
+请求参数：code
+
+| 参数说明 | 参数名称 | 是否必须 | 数据类型 | 备注     |
+| :------- | -------- | -------- | -------- | -------- |
+| 股票编码 | code     | true     | string   | 股票编码 |
+
+返回数据格式：
+
+~~~json
+{
+    "code": 1,
+    "data": [
+        {
+            "date": "2021-12-31 09:25",//当前时间，精确到分钟
+            "tradeAmt": 63263,//当前交易量
+            "code": "000021",//股票编码
+            "lowPrice": 15.85,//最低价格
+            "preClosePrice": 15.85,//前收盘价格
+            "name": "深科技",//股票名称
+            "highPrice": 15.85,//最高价格
+            "openPrice": 15.85,//开盘价
+            "tradeVol": 1002718.55,//交易金额
+            "tradePrice": 15.85//当前价格（最新价格）
+        },
+		//......
+          ]
+}
+~~~
+
+
+
+## 2. 实体类封装
+
+在stock_common工程下添加实体类：
+
+~~~java
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+
+import java.math.BigDecimal;
+import java.util.Date;
+
+/**
+ * 个股分时数据封装
+ */
+@ApiModel(value = "Stock4MinuteDomain", description = "个股分时数据封装类")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Stock4MinuteDomain {
+    
+    @ApiModelProperty(value = "日期，格式为 yyyy-MM-dd HH:mm", example = "2022-01-28 08:09")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm", timezone = "Asia/Shanghai")
+    private Date date;
+
+    @ApiModelProperty(value = "交易量")
+    private Long tradeAmt;
+
+    @ApiModelProperty(value = "股票编码", example = "600519")
+    private String code;
+
+    @ApiModelProperty(value = "该分钟内的最低价")
+    private BigDecimal lowPrice;
+
+    @ApiModelProperty(value = "前一个交易日的收盘价")
+    private BigDecimal preClosePrice;
+
+    @ApiModelProperty(value = "股票名称", example = "贵州茅台")
+    private String name;
+
+    @ApiModelProperty(value = "该分钟内的最高价")
+    private BigDecimal highPrice;
+
+    @ApiModelProperty(value = "该分钟开始时的开盘价")
+    private BigDecimal openPrice;
+
+    @ApiModelProperty(value = "当前交易会话中的总交易金额")
+    private BigDecimal tradeVol;
+
+    @ApiModelProperty(value = "当前交易价格")
+    private BigDecimal tradePrice;
+}
+
+~~~
+
+## 2. sql实现
+
+~~~sql
+-- 分析：查询个股分时K线图，说白了就是查询指定股票在当前交易日产生的流水数据报表展示
+-- 综合条件：1.股票ID 2.股票开盘时间 3.当前时间点
+select
+	sri.cur_time     as date,
+	sri.trade_amount as tradeAmt,
+	sri.stock_code as code,
+	sri.min_price lowPrice,
+	sri.pre_close_price as preClosePrice,
+	sri.stock_name as name,
+	sri.max_price as highPrice,
+	sri.open_price as openPrice,
+	sri.trade_volume as tradeVol,
+	sri.cur_price as tradePrice
+from stock_rt_info as sri
+where	sri.stock_code='600021'
+and sri.cur_time between '2021-12-30 09:30:00' and '2021-12-30 14:30:00';
+~~~
+
+## 3. 功能实现
+
+### 3.1 控制层
+
+~~~java
+    /**
+     * 功能描述：查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+     *         如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询时间点
+     * @param code 股票编码
+     * @return
+     */
+    @GetMapping("/stock/screen/time-sharing")
+    public R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code){
+        return stockService.stockScreenTimeSharing(code);
+    }
+~~~
+
+### 3.2 服务层
+
+服务接口方法：
+
+~~~java
+    /**
+     * 功能描述：查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+     *         如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询时间点
+     * @param code 股票编码
+     * @return
+     */
+    R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code);
+~~~
+
+接口实现：
+
+~~~java
+    /**
+     * 功能描述：查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+     *         如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询时间点
+     * @param code 股票编码
+     * @return
+     */
+    @Override
+    public R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code) {
+        //1.获取最近最新的交易时间点和对应的开盘日期
+        //1.1 获取最近有效时间点
+        DateTime lastDate4Stock = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = lastDate4Stock.toDate();
+        //TODO mockdata
+        endTime=DateTime.parse("2021-12-30 14:47:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+        //1.2 获取最近有效时间点对应的开盘日期
+        DateTime openDateTime = DateTimeUtil.getOpenDate(lastDate4Stock);
+        Date startTime = openDateTime.toDate();
+        //TODO MOCK DATA
+        startTime=DateTime.parse("2021-12-30 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.根据股票code和日期范围查询
+        List<Stock4MinuteDomain> list=stockRtInfoMapper.getStockInfoByCodeAndDate(stockCode,startTime,endTime);
+        //判断非空处理
+        if (CollectionUtils.isEmpty(list)) {
+            list=new ArrayList<>();
+        }
+        //3.返回响应数据
+        return R.ok(list);
+    }
+~~~
+
+### 3.3 持久层
+
+```java
+/**
+ * 根据时间范围查询指定股票的交易流水
+ * @param stockCode 股票code
+ * @param startTime 起始时间
+ * @param endTime 终止时间
+ * @return
+ */
+List<Stock4MinuteDomain> getStockInfoByCodeAndDate(@Param("stockCode") String stockCode,
+                                                   @Param("startTime") Date startTime,
+                                                   @Param("endTime") Date endTime);
+```
+
+xml sql绑定：
+
+~~~xml
+    <select id="getStockInfoByCodeAndDate" resultType="com.async.stock.pojo.domain.Stock4MinuteDomain">
+        select
+            sri.cur_time    as date,
+            sri.trade_amount as tradeAmt,
+            sri.stock_code as code,
+            sri.min_price as lowPrice,
+            sri.pre_close_price as preClosePrice,
+            sri.stock_name as name,
+            sri.max_price as highPrice,
+            sri.open_price as openPrice,
+            sri.trade_volume as tradeVol,
+            sri.cur_price as tradePrice
+        from stock_rt_info as sri
+        where sri.stock_code=#{stockCode}
+          and sri.cur_time between #{startTime} and #{endTime}
+    </select>
+~~~
+
+
+
+### 4. 功能测试
+
+```
+GET http://localhost:8091/api/quot/stock/screen/time-sharing?code=600019
+```
+
+![image-20240927194323491](./images/image-20240927194323491.png)
+
+  ![image-20240927194334805](./images/image-20240927194334805.png)

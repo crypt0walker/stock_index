@@ -2,6 +2,7 @@ package com.async.stock.controller;
 
 import com.async.stock.pojo.domain.InnerMarketDomain;
 //import com.async.stock.pojo.domain.StockUpdownDomain;
+import com.async.stock.pojo.domain.Stock4MinuteDomain;
 import com.async.stock.pojo.domain.StockBlockDomain;
 import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.service.StockService;
@@ -106,5 +107,21 @@ public class StockController {
         return stockService.stockTradeVol4InnerMarket();
     }
 
+    @ApiOperation(("查询当前时间下股票的涨跌幅度区间统计功能"))
+    @GetMapping("/stock/updown")
+    public R<Map> getStockUpDown(){
+        return stockService.stockUpDownScopeCount();
+    }
+    /**
+     * 功能描述：查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+     *         如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询时间点
+     * @param code 股票编码
+     * @return
+     */
+    @ApiOperation(("查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；"))
+    @GetMapping("/stock/screen/time-sharing")
+    public R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code){
+        return stockService.stockScreenTimeSharing(code);
+    }
 
 }

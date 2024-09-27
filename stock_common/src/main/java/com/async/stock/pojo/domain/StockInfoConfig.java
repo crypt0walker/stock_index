@@ -23,4 +23,7 @@ public class StockInfoConfig {
 
     @ApiModelProperty(value = "外盘ID集合", notes = "存储所有国外市场的主要股票ID")
     private List<String> outer; // 外盘ID集合
+
+    @ApiModelProperty(value = "股票区间", notes = "顺序存储股票涨幅区间信息")
+    private List<String> upDownRange;
 }

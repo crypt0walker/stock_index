@@ -5,10 +5,7 @@ import com.alibaba.excel.EasyExcel;
 import com.async.stock.mapper.StockBlockRtInfoMapper;
 import com.async.stock.mapper.StockMarketIndexInfoMapper;
 import com.async.stock.mapper.StockRtInfoMapper;
-import com.async.stock.pojo.domain.InnerMarketDomain;
-import com.async.stock.pojo.domain.StockBlockDomain;
-import com.async.stock.pojo.domain.StockInfoConfig;
-import com.async.stock.pojo.domain.StockUpdownDomain;
+import com.async.stock.pojo.domain.*;
 import com.async.stock.service.StockService;
 import com.async.stock.utils.DateTimeUtil;
 import com.async.stock.vo.resp.PageResult;
@@ -27,6 +24,7 @@ import org.springframework.util.CollectionUtils;
 import javax.servlet.http.HttpServletResponse;
 import java.net.URLEncoder;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author : itheima
@@ -246,4 +244,90 @@ public class StockServiceImpl implements StockService {
         //5.返回数据
         return R.ok(info);
     }
+    /**
+     * 查询当前时间下股票的涨跌幅度区间统计功能
+     * 如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询点
+     * @return
+     */
+    @Override
+    public R<Map> stockUpDownScopeCount() {
+        //1.获取股票最新一次交易的时间点
+        Date curDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+        //mock data
+        curDate=DateTime.parse("2022-01-06 09:55:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.查询股票信息
+        List<Map> maps=stockRtInfoMapper.getStockUpDownSectionByTime(curDate);
+        //2.1 获取有序的标题集合
+        List<String> orderSections = stockInfoConfig.getUpDownRange();
+        //思路：利用List集合的属性，然后顺序编译，找出每个标题对应的map，然后维护到一个新的List集合下即可
+//        List<Map> orderMaps =new ArrayList<>();
+//        for (String title : orderSections) {
+//            Map map=null;
+//            for (Map m : maps) {
+//                if (m.containsValue(title)) {
+//                    map=m;
+//                    break;
+//                }
+//            }
+//            if (map==null) {
+//                map=new HashMap();
+//                map.put("count",0);
+//                map.put("title",title);
+//            }
+//            orderMaps.add(map);
+//        }
+        //方式2：使用lambda表达式指定
+        List<Map> orderMaps  =  orderSections.stream().map(title->{
+            Map mp=null;
+            Optional<Map> op = maps.stream().filter(m -> m.containsValue(title)).findFirst();
+            //判断是否存在符合过滤条件的元素
+            if (op.isPresent()) {
+                mp=op.get();
+            }else{
+                mp=new HashMap();
+                mp.put("count",0);
+                mp.put("title",title);
+            }
+            return mp;
+        }).collect(Collectors.toList());
+        //3.组装数据
+        HashMap<String, Object> mapInfo = new HashMap<>();
+        //获取指定日期格式的字符串
+        String curDateStr = new DateTime(curDate).toString(DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"));
+        mapInfo.put("time",curDateStr);
+        mapInfo.put("infos",orderMaps);
+        //4.返回数据
+        return R.ok(mapInfo);
+    }
+
+    /**
+     * 功能描述：查询单个个股的分时行情数据，也就是统计指定股票T日每分钟的交易数据；
+     *         如果当前日期不在有效时间内，则以最近的一个股票交易时间作为查询时间点
+     * @param code 股票编码
+     * @return
+     */
+    @Override
+    public R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code) {
+        //1.获取最近最新的交易时间点和对应的开盘日期
+        //1.1 获取最近有效时间点
+        DateTime lastDate4Stock = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = lastDate4Stock.toDate();
+        //TODO mockdata
+        endTime=DateTime.parse("2021-12-30 14:47:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+
+        //1.2 获取最近有效时间点对应的开盘日期
+        DateTime openDateTime = DateTimeUtil.getOpenDate(lastDate4Stock);
+        Date startTime = openDateTime.toDate();
+        //TODO MOCK DATA
+        startTime=DateTime.parse("2021-12-30 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.根据股票code和日期范围查询
+        List<Stock4MinuteDomain> list=stockRtInfoMapper.getStockInfoByCodeAndDate(code,startTime,endTime);
+        //判断非空处理
+        if (CollectionUtils.isEmpty(list)) {
+            list=new ArrayList<>();
+        }
+        //3.返回响应数据
+        return R.ok(list);
+    }
+
 }

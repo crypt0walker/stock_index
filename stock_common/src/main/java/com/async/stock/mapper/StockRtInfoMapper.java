@@ -1,6 +1,7 @@
 package com.async.stock.mapper;
 
 //import com.async.stock.pojo.domain.StockUpdownDomain;
+import com.async.stock.pojo.domain.Stock4MinuteDomain;
 import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.pojo.entity.StockRtInfo;
 import org.apache.ibatis.annotations.MapKey;
@@ -52,4 +53,22 @@ public interface StockRtInfoMapper {
     @MapKey("time")
     List<Map> getStockUpDownCount(@Param("openTime") Date startTime, @Param("curTime") Date endTime, @Param("flag") int flag);
 
+    /**
+     * 统计指定时间点下，各个涨跌区间内股票的个数
+     * @param avlDate
+     * @return
+     */
+    @MapKey("UpDownSection")
+    List<Map> getStockUpDownSectionByTime(@Param("avlDate") Date avlDate);
+
+    /**
+     * 根据时间范围查询指定股票的交易流水
+     * @param stockCode 股票code
+     * @param startTime 起始时间
+     * @param endTime 终止时间
+     * @return
+     */
+    List<Stock4MinuteDomain> getStockInfoByCodeAndDate(@Param("stockCode") String stockCode,
+                                                       @Param("startTime") Date startTime,
+                                                       @Param("endTime") Date endTime);
 }
