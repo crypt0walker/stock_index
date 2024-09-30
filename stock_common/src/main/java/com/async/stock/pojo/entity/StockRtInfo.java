@@ -3,12 +3,16 @@ package com.async.stock.pojo.entity;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.Date;
+
+import jdk.nashorn.internal.runtime.Debug;
+import lombok.Builder;
 import lombok.Data;
 
 /**
  * 个股详情信息表
  * @TableName stock_rt_info
  */
+@Builder
 @Data
 public class StockRtInfo implements Serializable {
     /**
@@ -67,4 +71,6 @@ public class StockRtInfo implements Serializable {
     private Date curTime;
 
     private static final long serialVersionUID = 1L;
+
+
 }

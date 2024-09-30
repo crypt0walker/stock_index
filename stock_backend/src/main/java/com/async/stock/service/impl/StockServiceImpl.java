@@ -330,4 +330,29 @@ public class StockServiceImpl implements StockService {
         return R.ok(list);
     }
 
+    /**
+     * 功能描述：单个个股日K数据查询 ，可以根据时间区间查询数日的K线数据
+     * 		默认查询历史20天的数据；
+     * @param code 股票编码
+     * @return
+     */
+    @Override
+    public R<List<Stock4EvrDayDomain>> stockCreenDkLine(String code) {
+        //1.获取查询的日期范围
+        //1.1 获取截止时间
+        DateTime endDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = endDateTime.toDate();
+        //TODO MOCKDATA
+        endTime=DateTime.parse("2022-01-07 15:00:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //1.2 获取开始时间
+        DateTime startDateTime = endDateTime.minusDays(10);
+        Date startTime = startDateTime.toDate();
+        //TODO MOCKDATA
+        startTime=DateTime.parse("2022-01-01 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.调用mapper接口获取查询的集合信息-方案1
+        List<Stock4EvrDayDomain> data= stockRtInfoMapper.getStockInfo4EvrDay(code,startTime,endTime);
+        //3.组装数据，响应
+        return R.ok(data);
+    }
+
 }

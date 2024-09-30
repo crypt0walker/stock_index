@@ -117,7 +117,7 @@
 > docker run -d \
 >     --restart=always \
 >     -p 3306:3306 \
->     --name mysql \
+>     --name mysql2 \
 >     -v /tmp/mysql/data:/var/lib/mysql \
 >     -e MYSQL_ROOT_PASSWORD=root \
 >     -e TZ=Asia/Shanghai \
@@ -346,8 +346,6 @@ npm install # 若安装依赖过慢，可安装cnpm并下载安装依赖
 ~~~shell
 npm run dev # 启动工程
 ~~~
-
-![1662108014313](img/1662108014313.png)
 
 浏览器跨域问题：
 
@@ -5352,3 +5350,914 @@ GET http://localhost:8091/api/quot/stock/screen/time-sharing?code=600019
 ![image-20240927194323491](./images/image-20240927194323491.png)
 
   ![image-20240927194334805](./images/image-20240927194334805.png)
+
+# 十四、个股日k线详情功能
+
+## 1. 功能分析
+
+### 1.1 个股日K线详情功能原型
+
+#### ![image-20240929155436453](./images/image-20240929155436453.png)
+
+> 说明：
+>
+> 1.日K线就是将股票交易流水按天分组，然后统计出每天的交易数据，内容包含：日期、股票编码、名称、最高价、最低价、开盘价、收盘价、前收盘价、交易量；
+>
+> 2.需要注意的是这里的收盘价就是指每天最大交易时间点下对应的价格；
+
+### 1.2 接口说明
+
+功能描述：查询指定股票每天产生的数据，组装成日K线数据；
+
+​		    如果当大盘尚未收盘，则以最新的交易价格作为当天的收盘价格；
+
+服务路径：/api/quot/stock/screen/dkline
+服务方法：GET
+前端请求频率：每分钟
+
+请求参数：code
+
+| 参数说明 | 参数名称 | 是否必须 | 数据类型 | 备注     |
+| :------- | -------- | -------- | -------- | -------- |
+| 股票编码 | code     | true     | string   | 股票编码 |
+
+响应数据结构：
+
+~~~json
+{
+    "code": 1,
+    "data": [
+        {
+            "date": "2021-12-20 10:20",//日期
+            "tradeAmt": 28284252,//交易量(指收盘时的交易量，如果当天未收盘，则显示最新数据)
+            "code": "000021",//股票编码
+            "lowPrice": 16,//最低价格（指收盘时记录的最低价，如果当天未收盘，则显示最新数据）
+            "name": "深科技",//名称
+            "highPrice": 16.83,//最高价（指收盘时记录的最高价，如果当天未收盘，则显示最新数据）
+            "openPrice": 16.8,//开盘价
+            "tradeVol": 459088567.58,//交易金额（指收盘时记录交易量，如果当天未收盘，则显示最新数据）
+            "closePrice": 16.81//当前收盘价（指收盘时的价格，如果当天未收盘，则显示最新cur_price）
+            "preClosePrice": 16.81//前收盘价
+        },
+        //......
+    ]
+}
+~~~
+
+## 2. 实体类封装
+
+在stock_common工程添加实体类，封装查询数据：
+
+~~~java
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.util.Date;
+
+/**
+ * @author by async
+ * @Date 2024/9/29
+ * @Description 个股日K数据封装
+ */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@ApiModel(value = "Stock4EvrDayDomain", description = "日K数据封装 for individual stocks")
+public class Stock4EvrDayDomain {
+
+    @ApiModelProperty(value = "日期，格式为: yyyy-MM-dd HH:mm", example = "2022-01-28 08:09")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm", timezone = "Asia/Shanghai")
+    private Date date;
+
+    @ApiModelProperty(value = "交易量", example = "500000")
+    private Long tradeAmt;
+
+    @ApiModelProperty(value = "股票编码", example = "600519")
+    private String code;
+
+    @ApiModelProperty(value = "最低价", example = "1800.50")
+    private BigDecimal lowPrice;
+
+    @ApiModelProperty(value = "股票名称", example = "贵州茅台")
+    private String name;
+
+    @ApiModelProperty(value = "最高价", example = "1890.88")
+    private BigDecimal highPrice;
+
+    @ApiModelProperty(value = "开盘价", example = "1810.00")
+    private BigDecimal openPrice;
+
+    @ApiModelProperty(value = "当前交易总金额", example = "9000000.00")
+    private BigDecimal tradeVol;
+
+    @ApiModelProperty(value = "当前收盘价格，如果当天未收盘，则为最新价格", example = "1850.75")
+    private BigDecimal closePrice;
+
+    @ApiModelProperty(value = "前收盘价", example = "1800.00")
+    private BigDecimal preClosePrice;
+}
+
+~~~
+
+
+
+## 3. sql实现
+
+~~~sql
+-- 说明：因为在股票流水中，开盘价、最高价、最低价、当前价等信息在每条记录中都会记录，所以我们更加关注的是每天的收盘价格，业务要求如果当前没有收盘，则以最新价格作为收盘价，所以该业务就可以转化成查询每天最大交易时间对应的信息；
+-- 步骤1：查询指定股票在指定日期范围内每天的最大时间，说白了就是以天分组，求每天最大时间
+select
+	max( sri.cur_time ) as closeDate 
+from
+	stock_rt_info as sri 
+where
+	sri.stock_code ='600021' 
+	and sri.cur_time between '2022-01-01 09:30:00' and '2022-01-06 14:25:00' 
+group by
+	date_format( sri.cur_time, '%Y%m%d' )
+-- 步骤2：以步骤1查询结果作为条件，同统计指定时间点下，股票的数据信息
+select
+	sri2.cur_time as date,
+	sri2.trade_amount as tradeAmt,
+	sri2.stock_code as code,
+	sri2.min_price as lowPrice,
+	sri2.stock_name as name,
+	sri2.max_price as highPrice,
+	sri2.open_price as openPrice,
+	sri2.trade_volume as tradeVol,
+	sri2.cur_price as closePrice,
+	sri2.pre_close_price as preClosePrice
+from
+	stock_rt_info as sri2
+where sri2.stock_code='600021'  and sri2.cur_time in (
+  select
+	max( sri.cur_time ) as closeDate 
+  from
+	stock_rt_info as sri 
+  where
+	sri.stock_code ='600021' 
+	and sri.cur_time between '2022-01-01 09:30:00' and '2022-01-06 14:25:00' 
+  group by
+	date_format( sri.cur_time, '%Y%m%d' )
+  )	
+  order by sri2.cur_time;
+~~~
+
+
+
+## 3. 功能实现
+
+### 3.1 控制层
+
+~~~java
+    /**
+     * 单个个股日K 数据查询 ，可以根据时间区间查询数日的K线数据
+     * @param stockCode 股票编码
+     */
+    @RequestMapping("/stock/screen/dkline")
+    public R<List<Map>> getDayKLinData(@RequestParam("code") String stockCode){
+        return stockService.stockCreenDkLine(stockCode);
+    }
+~~~
+
+### 3.2 服务层
+
+服务接口方法：
+
+~~~java
+    /**
+     * 单个个股日K 数据查询 ，可以根据时间区间查询数日的K线数据
+     * @param stockCode 股票编码
+     */
+    R<List<Stock4EvrDayDomain>> stockCreenDkLine(String code);
+~~~
+
+服务接口实现方法：
+
+~~~java
+    /**
+     * 功能描述：单个个股日K数据查询 ，可以根据时间区间查询数日的K线数据
+     * 		默认查询历史20天的数据；
+     * @param code 股票编码
+     * @return
+     */
+    @Override
+    public R<List<Stock4EvrDayDomain>> stockCreenDkLine(String code) {
+        //1.获取查询的日期范围
+        //1.1 获取截止时间
+        DateTime endDateTime = DateTimeUtil.getLastDate4Stock(DateTime.now());
+        Date endTime = endDateTime.toDate();
+        //TODO MOCKDATA
+        endTime=DateTime.parse("2022-01-07 15:00:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //1.2 获取开始时间
+        DateTime startDateTime = endDateTime.minusDays(10);
+        Date startTime = startDateTime.toDate();
+        //TODO MOCKDATA
+        startTime=DateTime.parse("2022-01-01 09:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        //2.调用mapper接口获取查询的集合信息-方案1
+        List<Stock4EvrDayDomain> data= stockRtInfoMapper.getStockInfo4EvrDay(code,startTime,endTime);
+        //3.组装数据，响应
+        return R.ok(data);
+    }
+~~~
+
+### 3.3 持久层
+
+在StockRtInfoMapper定义接口方法：
+
+~~~java
+    /**
+     * 查询指定日期范围内指定股票每天的交易数据
+     * @param stockCode 股票code
+     * @param startTime 起始时间
+     * @param endTime 终止时间
+     * @return
+     */
+    List<Stock4EvrDayDomain> getStockInfo4EvrDay(@Param("stockCode") String stockCode,
+                                                 @Param("startTime") Date startTime,
+                                                 @Param("endTime") Date endTime);
+~~~
+
+在StockRtInfoMapper.xml定义sql：	
+
+~~~xml
+    <select id="getStockInfo4EvrDay" resultType="com.itheima.stock.pojo.domain.Stock4EvrDayDomain">
+        select
+             date_format(sri2.cur_time,'%Y%m%d') as date,
+             sri2.trade_amount as tradeAmt,
+             sri2.stock_code as code,
+             sri2.min_price as lowPrice,
+             sri2.stock_name as name,
+             sri2.max_price as highPrice,
+             sri2.open_price as openPrice,
+             sri2.trade_volume as tradeVol,
+             sri2.cur_price as closePrice,
+             sri2.pre_close_price as preClosePrice
+        from stock_rt_info as sri2
+        where sri2.cur_time in (select
+            max(sri.cur_time) as max_time
+            from stock_rt_info as sri
+            where sri.stock_code=#{stockCode}
+          and sri.cur_time between  #{startTime}   and	#{endTime}
+            group by date_format(sri.cur_time,'%Y%m%d'))
+          and sri2.stock_code=#{stockCode}
+        order by sri2.cur_time
+    </select>
+~~~
+
+#### 2.3.4 web接口测试
+
+```
+GET http://localhost:8091/api/quot/stock/screen/dkline?
+    code=600019
+```
+
+![image-20240929161124895](./images/image-20240929161124895.png)
+
+页面效果
+
+![image-20240929161547580](./images/image-20240929161547580.png)
+
+# 十五、股票数据采集环境搭建
+
+## 1、股票数据采集背景说明
+
+​	当前项目中的股票数据都是历史数据，不是实时最新的数据，而要想获取股票最新的数据，就需要定时调用第三方接口拉取最新数据流水；
+
+​	Spring框架已为我们封装了一套访问远程http接口的模板工具：RestTemplate，借助于该工具，我们可访问第三方股票接口，获取股票最新数据。
+​	RestTemplate本质上就是一个非常轻量级http客户端，使用简单且容易上手；
+
+​	股票数据采集核心流程如下：
+
+![image-20240929163832626](./images/image-20240929163832626.png)
+
+常见http客户端组件：
+
+~~~json
+RestTemplate:Spring提供，轻量易上手；
+HttpClient:apache提供；
+OkHttpClient
+~~~
+
+整体工程结构：
+
+<img src="./images/image-20240929163849673.png" alt="image-20240929163849673" style="zoom: 50%;" />
+
+## 2、构建股票数据采集工程
+
+### 2.1 工程搭建
+
+在stock_parent工程下构建stock_job子工程，并在pom中引入依赖：
+
+~~~xml
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>stock_parent</artifactId>
+        <groupId>com.itheima.stock</groupId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+    <packaging>jar</packaging>
+    <artifactId>stock_job</artifactId>
+    <description>核心功能:拉去股票数据</description>
+    <properties>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.itheima.stock</groupId>
+            <artifactId>stock_common</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- 基本依赖 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!--打包名称-->
+        <finalName>${project.artifactId}</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+~~~
+
+application.yml主配置文件与stock_backend工程一致：
+
+~~~yaml
+# 配置服务端口
+server:
+  port: 8092
+spring:
+  # 配置mysql数据源
+  datasource:
+    druid:
+      username: root
+      password: root
+      url: jdbc:mysql://192.168.200.130:3306/stock_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+      driver-class-name: com.mysql.jdbc.Driver
+      # 初始化时建立物理连接的个数。初始化发生在显示调用 init 方法，或者第一次 getConnection 时
+      initialSize: 6
+      # 最小连接池数量
+      minIdle: 2
+      # 最大连接池数量
+      maxActive: 20
+      # 获取连接时最大等待时间，单位毫秒。配置了 maxWait 之后，缺省启用公平锁，
+      # 并发效率会有所下降，如果需要可以通过配置 useUnfairLock 属性为 true 使用非公平锁。
+      maxWait: 60000
+# 配置mybatis
+mybatis:
+  type-aliases-package: com.itheima.stock.pojo.* # 配置实体类扫描，取别名
+  mapper-locations: classpath:mapper/*.xml # 配置扫描的xml的位置
+  configuration:
+    map-underscore-to-camel-case: true # 开启驼峰映射 table:user_name-->entity:userName
+
+# pagehelper配置
+pagehelper:
+  helper-dialect: mysql #指定分页数据库类型（方言）
+  reasonable: true #合理查询超过最大页，则查询最后一页
+~~~
+
+添加main启动类：
+
+~~~java
+package com.itheima.stock;
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+@SpringBootApplication
+@MapperScan("com.itheima.stock.mapper")
+public class JobApp {
+    public static void main(String[] args) {
+        SpringApplication.run(JobApp.class, args);
+    }
+}
+~~~
+
+工程目录结构如下：
+
+![image-20240929164832009](./images/image-20240929164832009.png)
+
+### 2.2 配置RestTemplate
+
+在stock_job工程下配置RestTemplate bean对象：
+
+~~~java
+package com.itheima.stock.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * @author by itheima
+ * @Date 2022/1/1
+ * @Description 定义访问http服务的配置类
+ */
+@Configuration
+public class HttpClientConfig {
+    /**
+     * 定义restTemplate bean
+     * @return
+     */
+    @Bean
+    public RestTemplate restTemplate(){
+        return new RestTemplate();
+    }
+}
+~~~
+
+> 说明：RestTemplate是一个java Http的客户端，可以模拟浏览器的访问行为，获取接口数据；
+
+## 3、RestTemplate快速入门
+
+### 3.1 RestTemplate API入门-1
+
+测试环境准备: IDEA导入测试工程：**day05\资料\http测试接口工程\test4http**，该工程为restTemplate提供测试接口；
+
+#### 3.1.1 get请求携带参数访问外部url
+
+~~~java
+package com.itheima.stock;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
+
+/**
+ * @author by itheima
+ * @Date 2022/1/1
+ * @Description
+ */
+@SpringBootTest
+public class TestRestTemplate {
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    /**
+     * 测试get请求携带url参数，访问外部接口
+     */
+    @Test
+    public void test01(){
+        String url="http://localhost:6666/account/getByUserNameAndAddress?userName=itheima&address=shanghai";
+        /*
+          参数1：url请求地址
+          参数2：请求返回的数据类型
+         */
+        ResponseEntity<String> result = restTemplate.getForEntity(url, String.class);
+        //获取响应头
+        HttpHeaders headers = result.getHeaders();
+        System.out.println(headers.toString());
+        //响应状态码
+        int statusCode = result.getStatusCodeValue();
+        System.out.println(statusCode);
+        //响应数据
+        String respData = result.getBody();
+        System.out.println(respData);
+    }
+}
+~~~
+
+#### 3.1.2 get请求响应数据自动封装vo实体对象
+
+~~~java
+    /**
+     * 测试响应数据自动封装到vo对象
+     */
+    @Test
+    public void test02(){
+        String url="http://localhost:6666/account/getByUserNameAndAddress?userName=itheima&address=shanghai";
+        /*
+          参数1：url请求地址
+          参数2：请求返回的数据类型
+         */
+        Account account = restTemplate.getForObject(url, Account.class);
+        System.out.println(account);
+    }
+
+    @Data
+    public static class Account {
+
+        private Integer id;
+
+        private String userName;
+
+        private String address;
+        
+    }
+~~~
+
+#### 3.1.3  请求头携带参数访问外部接口
+
+~~~java
+    /**
+     * 请求头设置参数，访问指定接口
+     */
+    @Test
+    public void test03(){
+        String url="http://localhost:6666/account/getHeader";
+        //设置请求头参数
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("userName","zhangsan");
+        //请求头填充到请求对象下
+        HttpEntity<Map> entry = new HttpEntity<>(headers);
+        //发送请求
+        ResponseEntity<String> responseEntity = restTemplate.exchange(url, HttpMethod.GET, entry, String.class);
+        String result = responseEntity.getBody();
+        System.out.println(result);
+    }
+~~~
+
+### 3.2 RestTemplate API入门-2
+
+#### 3.2.1 POST请求模拟form表单访问外部接口
+
+~~~java
+    /**
+     * post模拟form表单提交数据
+     */
+    @Test
+    public void test04(){
+        String url="http://localhost:6666/account/addAccount";
+        //设置请求头，指定请求数据方式
+        HttpHeaders headers = new HttpHeaders();
+       //告知被调用方，请求方式是form表单提交，这样对方解析数据时，就会按照form表单的方式解析处理
+        headers.add("Content-type","application/x-www-form-urlencoded");
+        //组装模拟form表单提交数据，内部元素相当于form表单的input框
+        LinkedMultiValueMap<String, Object> map = new LinkedMultiValueMap<>();
+        map.add("id","10");
+        map.add("userName","itheima");
+        map.add("address","shanghai");
+        HttpEntity<LinkedMultiValueMap<String, Object>> httpEntity = new HttpEntity<>(map, headers);
+        /*
+            参数1：请求url地址
+            参数2：请求方式 POST
+            参数3：请求体对象，携带了请求头和请求体相关的参数
+            参数4：响应数据类型
+         */
+        ResponseEntity<Account> exchange = restTemplate.exchange(url, HttpMethod.POST, httpEntity, Account.class);
+        Account body = exchange.getBody();
+        System.out.println(body);
+    }
+~~~
+
+#### 3.2.2 POST请求发送JSON数据
+
+~~~java
+    /**
+     * post发送json数据
+     */
+    @Test
+    public void test05(){
+        String url="http://localhost:6666/account/updateAccount";
+        //设置请求头的请求参数类型
+        HttpHeaders headers = new HttpHeaders();
+       //告知被调用方，发送的数据格式的json格式，对方要以json的方式解析处理
+        headers.add("Content-type","application/json; charset=utf-8");
+        //组装json格式数据
+//        HashMap<String, String> reqMap = new HashMap<>();
+//        reqMap.put("id","1");
+//        reqMap.put("userName","zhangsan");
+//        reqMap.put("address","上海");
+//        String jsonReqData = new Gson().toJson(reqMap);
+        String jsonReq="{\"address\":\"上海\",\"id\":\"1\",\"userName\":\"zhangsan\"}";
+        //构建请求对象
+        HttpEntity<String> httpEntity = new HttpEntity<>(jsonReq, headers);
+          /*
+            发送数据
+            参数1：请求url地址
+            参数2：请求方式
+            参数3：请求体对象，携带了请求头和请求体相关的参数
+            参数4：响应数据类型
+         */
+        ResponseEntity<Account> responseEntity = restTemplate.exchange(url, HttpMethod.POST, httpEntity, Account.class);
+      //或者
+     // Account account=restTemplate.postForObject(url,httpEntity,Account.class);
+        Account body = responseEntity.getBody();
+        System.out.println(body);
+    }
+~~~
+
+#### 3.2.3 获取接口响应的cookie数据
+
+~~~java
+    /**
+     * 获取请求cookie值
+     */
+    @Test
+    public void test06(){
+        String url="http://localhost:6666/account/getCookie";
+        ResponseEntity<String> result = restTemplate.getForEntity(url, String.class);
+        //获取cookie
+        List<String> cookies = result.getHeaders().get("Set-Cookie");
+        //获取响应数据
+        String resStr = result.getBody();
+        System.out.println(resStr);
+        System.out.println(cookies);
+    }
+~~~
+
+## 4. RestTemplate教程
+
+好的，既然您希望有更详细的解释，我将详细讲解 `RestTemplate` 的使用，包括它的核心概念、常用方法、以及它在不同 HTTP 请求场景下的使用方式，超越您提供的案例。
+
+### 一、RestTemplate 基本概念
+
+`RestTemplate` 是 Spring 提供的用于发起同步 HTTP 请求的客户端，能够轻松处理各种 HTTP 方法，包括 GET、POST、PUT、DELETE 等。它主要用于与 RESTful 服务进行通信。`RestTemplate` 对比手动使用 `HttpClient` 或 `URLConnection` 的好处是简化了开发者的工作，不需要自己处理底层细节，比如连接、超时设置、异常处理等。
+
+### 二、RestTemplate 常见方法
+
+1. **getForObject(url, responseType, urlVariables)**: 
+   - 发起一个 GET 请求，直接将响应结果以指定类型的对象返回，自动反序列化成 Java 对象。
+   - 适合简单的 GET 请求，直接获取内容。
+   
+2. **getForEntity(url, responseType, urlVariables)**:
+   - 发起 GET 请求，返回 `ResponseEntity`，包含响应状态码、响应头和响应体。
+   - 比 `getForObject` 提供了更多的信息，适合需要访问响应元数据（如状态码、头部信息）的场景。
+
+3. **postForObject(url, request, responseType)**:
+   - 发起 POST 请求，发送请求体，并将响应结果封装成 Java 对象返回。
+   
+4. **postForEntity(url, request, responseType)**:
+   - 类似 `postForObject`，但是返回 `ResponseEntity`，可以访问响应状态和头部。
+
+5. **exchange(url, method, requestEntity, responseType)**:
+   - 一个通用的请求方法，支持 GET、POST、PUT、DELETE 等所有 HTTP 方法。
+   - `HttpEntity` 对象作为请求体，可以包含请求头和请求体。
+
+6. **delete(url, urlVariables)**:
+   - 发起 DELETE 请求，不返回响应体。
+
+7. **put(url, request, urlVariables)**:
+   - 发起 PUT 请求，用于更新资源，不返回响应体。
+
+### 三、RestTemplate 的配置和注入
+
+要在 Spring Boot 中使用 `RestTemplate`，我们通常需要在 `@Configuration` 类中注册它，或者直接使用 `@Autowired` 注解来注入它。以下是一个简单的配置示例：
+
+```java
+@Configuration
+public class AppConfig {
+    @Bean
+    public RestTemplate restTemplate() {
+        return new RestTemplate();
+    }
+}
+```
+
+注册了 `RestTemplate` 后，可以在服务类或测试类中通过 `@Autowired` 注入并使用它：
+
+```java
+@Autowired
+private RestTemplate restTemplate;
+```
+
+### 四、RestTemplate 的常见使用场景
+
+#### 1. GET 请求：获取数据
+
+使用 `getForObject` 或 `getForEntity` 来执行 GET 请求。`getForObject` 直接返回响应体，而 `getForEntity` 则返回带有更多信息的 `ResponseEntity`。
+
+```java
+// 简单获取响应体
+String url = "https://api.example.com/getData?param=value";
+String response = restTemplate.getForObject(url, String.class);
+System.out.println(response);
+
+// 获取更多响应元数据
+ResponseEntity<String> responseEntity = restTemplate.getForEntity(url, String.class);
+HttpHeaders headers = responseEntity.getHeaders();
+HttpStatus statusCode = responseEntity.getStatusCode();
+String body = responseEntity.getBody();
+
+System.out.println("Headers: " + headers);
+System.out.println("Status Code: " + statusCode);
+System.out.println("Body: " + body);
+```
+
+#### 2. POST 请求：发送表单数据和 JSON 数据
+
+`RestTemplate` 允许我们通过 `postForObject` 或 `exchange` 发送 POST 请求，向服务器发送表单数据或 JSON 数据。
+
+- **发送表单数据**：
+  使用 `MultiValueMap` 模拟表单提交。
+
+```java
+String url = "https://api.example.com/submitForm";
+HttpHeaders headers = new HttpHeaders();
+headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+
+MultiValueMap<String, String> map = new LinkedMultiValueMap<>();
+map.add("param1", "value1");
+map.add("param2", "value2");
+
+HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(map, headers);
+String response = restTemplate.postForObject(url, request, String.class);
+System.out.println(response);
+```
+
+- **发送 JSON 数据**：
+  将对象或 JSON 字符串作为请求体发送。
+
+```java
+String url = "https://api.example.com/postJson";
+HttpHeaders headers = new HttpHeaders();
+headers.setContentType(MediaType.APPLICATION_JSON);
+
+String jsonReq = "{\"key\":\"value\"}";
+HttpEntity<String> request = new HttpEntity<>(jsonReq, headers);
+ResponseEntity<String> responseEntity = restTemplate.postForEntity(url, request, String.class);
+System.out.println(responseEntity.getBody());
+```
+
+或者使用对象直接序列化为 JSON：
+
+```java
+MyRequestObject reqObj = new MyRequestObject();
+reqObj.setKey("value");
+
+HttpEntity<MyRequestObject> request = new HttpEntity<>(reqObj, headers);
+MyResponseObject response = restTemplate.postForObject(url, request, MyResponseObject.class);
+System.out.println(response);
+```
+
+#### 3. 带有请求头的 GET/POST 请求
+
+通过 `HttpEntity` 可以为请求添加自定义头部信息。
+
+```java
+HttpHeaders headers = new HttpHeaders();
+headers.set("Authorization", "Bearer your-token-here");
+
+HttpEntity<String> request = new HttpEntity<>(headers);
+ResponseEntity<String> responseEntity = restTemplate.exchange(url, HttpMethod.GET, request, String.class);
+
+System.out.println(responseEntity.getBody());
+```
+
+#### 4. PUT 请求：更新数据
+
+`RestTemplate` 的 `put` 方法允许更新服务器上的资源。
+
+```java
+String url = "https://api.example.com/updateResource";
+MyUpdateObject updateObject = new MyUpdateObject();
+updateObject.setField1("newValue");
+
+restTemplate.put(url, updateObject);
+```
+
+#### 5. DELETE 请求：删除数据
+
+`delete` 方法用于发送 DELETE 请求删除服务器上的资源：
+
+```java
+String url = "https://api.example.com/deleteResource/{id}";
+restTemplate.delete(url, 123);
+```
+
+### 五、处理复杂请求：exchange
+
+`exchange` 是一个非常强大的方法，可以处理任何 HTTP 请求方法。它允许我们自定义请求体、头部信息，并能够处理更复杂的请求场景。
+
+```java
+String url = "https://api.example.com/resource";
+HttpHeaders headers = new HttpHeaders();
+headers.set("Authorization", "Bearer your-token-here");
+
+HttpEntity<String> requestEntity = new HttpEntity<>(headers);
+
+ResponseEntity<String> responseEntity = restTemplate.exchange(
+        url, 
+        HttpMethod.GET, 
+        requestEntity, 
+        String.class
+);
+
+System.out.println(responseEntity.getBody());
+```
+
+### 六、处理异常
+
+在使用 `RestTemplate` 时，有时候会遇到 HTTP 状态码异常。可以通过捕获 `RestClientException` 或 `HttpStatusCodeException` 来处理这些异常。
+
+```java
+try {
+    ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+} catch (HttpStatusCodeException e) {
+    System.out.println("HTTP Status Code: " + e.getStatusCode());
+    System.out.println("Response Body: " + e.getResponseBodyAsString());
+} catch (RestClientException e) {
+    System.out.println("RestClientException: " + e.getMessage());
+}
+```
+
+### 七、超时与连接池配置
+
+`RestTemplate` 默认使用 `SimpleClientHttpRequestFactory` 处理请求，如果想设置超时或使用连接池，可以使用 `HttpComponentsClientHttpRequestFactory` 或其他工厂来代替。
+
+```java
+@Bean
+public RestTemplate restTemplate() {
+    HttpComponentsClientHttpRequestFactory factory = new HttpComponentsClientHttpRequestFactory();
+    factory.setConnectTimeout(5000); // 连接超时
+    factory.setReadTimeout(5000); // 读取超时
+    return new RestTemplate(factory);
+}
+```
+
+### 八、总结
+
+`RestTemplate` 是一个非常强大且灵活的 HTTP 客户端库，适用于多种场景。无论是简单的 GET、POST 请求，还是复杂的请求处理、异常处理、或自定义超时设置，`RestTemplate` 都能够很好地支持。在现代 Spring 应用中，它可以帮助开发者轻松地与外部服务进行交互。
+
+
+
+当然，这次我将整合并详细讨论Java中正则表达式的核心概念，特别注重`\\b`（单词边界）的用法。
+
+## 5. Java正则
+
+### 1. 正则表达式基本概念
+
+正则表达式是用于匹配字符串中文本模式的一种工具。在Java中，正则表达式由`java.util.regex`包提供支持，主要通过`Pattern`和`Matcher`两个类来使用。
+
+### 2. 核心类：Pattern 和 Matcher
+
+- **Pattern**: 这个类是编译后的正则表达式的表示形式。通过`Pattern.compile(String regex)`方法可以将字符串形式的正则表达式编译成`Pattern`对象。这个对象可以多次用来创建`Matcher`对象。
+
+- **Matcher**: 这个类用于执行实际的匹配操作。它不是直接创建的，而是通过`Pattern`对象的`matcher(CharSequence input)`方法得到。这个类提供了多种方法如`matches()`、`find()`、`group()`等，用于不同的匹配需求。
+
+### 3. 正则表达式的特殊字符和构造
+
+#### 元字符
+- `.` 匹配除换行外的任何单个字符
+- `^` 匹配输入字符串的开始位置
+- `$` 匹配输入字符串的结束位置
+- `*`, `+`, `?` 分别匹配前面的字符零次或多次、一次或多次、零次或一次
+- `\d`, `\w`, `\s` 分别匹配数字、单词字符（字母、数字、下划线）、空白字符
+
+#### 括号和边界
+- `[]` 字符集，匹配包含的任一字符
+- `|` 分支条件，匹配前后任一表达式
+- `()` 分组，控制优先级或为后续引用捕获
+
+#### `\\b` —— 单词边界
+- `\\b` 是一个位置元字符，用于匹配单词的边界。单词边界是单词字符（`\w`）和非单词字符之间的位置，或者单词字符与字符串的开始或结束位置。
+- 这个元字符非常有用，因为它可以确保匹配操作定位于完整的单词。例如，正则表达式`\\bcat\\b`可以匹配“cat”，但不会匹配“catalogue”中的“cat”。
+
+### 4. 示例：使用`Pattern`和`Matcher`
+
+#### 验证和搜索
+
+- 验证一个字符串是否为有效的邮箱地址：
+```java
+String email = "user@example.com";
+Pattern pattern = Pattern.compile("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,6}$");
+Matcher matcher = pattern.matcher(email);
+if (matcher.matches()) {
+    System.out.println("Email is valid.");
+} else {
+    System.out.println("Email is invalid.");
+}
+```
+
+- 搜索一个字符串中的所有单词：
+```java
+String text = "This is a sample text with several words.";
+Pattern pattern = Pattern.compile("\\b\\w+\\b");
+Matcher matcher = pattern.matcher(text);
+while (matcher.find()) {
+    System.out.println("Found word: " + matcher.group());
+}
+```
+
+这两个例子展示了如何使用`Pattern`和`Matcher`来进行基本的匹配操作，以及如何利用`\\b`来确保只匹配完整的单词。希望这次的整合和详细解释能帮助你全面理解Java中的正则表达式。如果还有其他问题或需要更多示例，请随时提问！

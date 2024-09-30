@@ -26,4 +26,9 @@ public class StockInfoConfig {
 
     @ApiModelProperty(value = "股票区间", notes = "顺序存储股票涨幅区间信息")
     private List<String> upDownRange;
+
+    @ApiModelProperty(value = "大盘参数获取url", notes = "存储大盘参数获取url")
+    private String marketUrl;
+    @ApiModelProperty(value = "板块参数获取url", notes = "存储板块参数获取url")
+    private String blockUrl;
 }

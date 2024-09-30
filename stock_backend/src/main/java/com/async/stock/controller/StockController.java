@@ -1,10 +1,7 @@
 package com.async.stock.controller;
 
-import com.async.stock.pojo.domain.InnerMarketDomain;
+import com.async.stock.pojo.domain.*;
 //import com.async.stock.pojo.domain.StockUpdownDomain;
-import com.async.stock.pojo.domain.Stock4MinuteDomain;
-import com.async.stock.pojo.domain.StockBlockDomain;
-import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.service.StockService;
 import com.async.stock.vo.resp.PageResult;
 import com.async.stock.vo.resp.R;
@@ -122,6 +119,15 @@ public class StockController {
     @GetMapping("/stock/screen/time-sharing")
     public R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code){
         return stockService.stockScreenTimeSharing(code);
+    }
+    /**
+     * 单个个股日K 数据查询 ，可以根据时间区间查询数日的K线数据
+     * @param stockCode 股票编码
+     */
+    @ApiOperation(("单个个股日K 数据查询 ，可以根据时间区间查询数日的K线数据；"))
+    @RequestMapping("/stock/screen/dkline")
+    public R<List<Stock4EvrDayDomain>> getDayKLinData(@RequestParam("code") String stockCode){
+        return stockService.stockCreenDkLine(stockCode);
     }
 
 }

@@ -2,12 +2,15 @@ package com.async.stock.pojo.entity;
 
 import java.io.Serializable;
 import java.util.Date;
+
+import lombok.Builder;
 import lombok.Data;
 
 /**
  * 主营业务表
  * @TableName stock_business
  */
+@Builder
 @Data
 public class StockBusiness implements Serializable {
     /**

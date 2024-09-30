@@ -1,10 +1,7 @@
 package com.async.stock.service;
 
-import com.async.stock.pojo.domain.InnerMarketDomain;
+import com.async.stock.pojo.domain.*;
 //import com.async.stock.pojo.domain.StockUpdownDomain;
-import com.async.stock.pojo.domain.Stock4MinuteDomain;
-import com.async.stock.pojo.domain.StockBlockDomain;
-import com.async.stock.pojo.domain.StockUpdownDomain;
 import com.async.stock.vo.resp.PageResult;
 import com.async.stock.vo.resp.R;
 
@@ -73,4 +70,9 @@ public interface StockService {
      * @return
      */
     R<List<Stock4MinuteDomain>> stockScreenTimeSharing(String code);
+    /**
+     * 单个个股日K 数据查询 ，可以根据时间区间查询数日的K线数据
+     * @param stockCode 股票编码
+     */
+    R<List<Stock4EvrDayDomain>> stockCreenDkLine(String stockCode);
 }
