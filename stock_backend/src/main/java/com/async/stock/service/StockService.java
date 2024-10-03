@@ -75,4 +75,8 @@ public interface StockService {
      * @param stockCode 股票编码
      */
     R<List<Stock4EvrDayDomain>> stockCreenDkLine(String stockCode);
+
+    R<List<InnerMarketDomain>> getInnerMarketInfos();
+
+//    R<List<InnerMarketDomain>> getInnnerMarketInfos();
 }

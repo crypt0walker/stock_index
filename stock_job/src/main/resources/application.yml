@@ -9,6 +9,12 @@ logging:
     org.springframework.http.converter: DEBUG
 
 spring:
+  rabbitmq:
+    host: 192.168.22.132 # rabbitMQ的ip地址
+    port: 5672 # 端口
+    username: async
+    password: root
+    virtual-host: /
   # 配置mysql数据源，使用Druid数据库连接池
   datasource:
     druid:

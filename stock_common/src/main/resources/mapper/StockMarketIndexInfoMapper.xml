@@ -67,6 +67,9 @@
         group by smi.cur_time
         order by time asc;
     </select>
+    <select id="getInnerIndexByTimeAndCodes" resultType="com.async.stock.pojo.domain.InnerMarketDomain">
+
+    </select>
 
 
     <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
@@ -113,6 +116,29 @@
                 <if test="curTime != null">#{curTime,jdbcType=TIMESTAMP},</if>
         </trim>
     </insert>
+    <insert id="insertBatch">
+        insert into stock_market_index_info
+        ( id, market_code, cur_time, market_name, cur_point,
+        open_point, pre_close_point, max_point, min_point,
+        trade_volume, trade_amount )
+        values
+        <foreach collection="list" item="smi" separator=",">
+            (#{smi.id,jdbcType=BIGINT}, #{smi.marketCode,jdbcType=VARCHAR}, #{smi.curTime,jdbcType=TIMESTAMP},
+            #{smi.marketName,jdbcType=VARCHAR}, #{smi.curPoint,jdbcType=DECIMAL},
+            #{smi.openPoint,jdbcType=DECIMAL}, #{smi.preClosePoint,jdbcType=DECIMAL}, #{smi.maxPoint,jdbcType=DECIMAL},
+            #{smi.minPoint,jdbcType=DECIMAL}, #{smi.tradeVolume,jdbcType=DECIMAL}, #{smi.tradeAmount,jdbcType=BIGINT})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+        market_name = VALUES(market_name),
+        cur_point = VALUES(cur_point),
+        open_point = VALUES(open_point),
+        pre_close_point = VALUES(pre_close_point),
+        max_point = VALUES(max_point),
+        min_point = VALUES(min_point),
+        trade_volume = VALUES(trade_volume),
+        trade_amount = VALUES(trade_amount);
+    </insert>
+
     <update id="updateByPrimaryKeySelective" parameterType="com.async.stock.pojo.entity.StockMarketIndexInfo">
         update stock_market_index_info
         <set>

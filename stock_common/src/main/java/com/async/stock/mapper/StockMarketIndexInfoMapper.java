@@ -50,4 +50,12 @@ public interface StockMarketIndexInfoMapper {
     List<Map> getStockTradeVol(@Param("markedIds") List<String> markedIds,
                                @Param("startTime") Date startTime,
                                @Param("endTime") Date endTime);
+
+    /**
+     * 批量插入股票大盘数据
+     * @param infos
+     */
+    int insertBatch(List<StockMarketIndexInfo> infos);
+
+
 }

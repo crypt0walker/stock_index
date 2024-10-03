@@ -51,6 +51,7 @@
         <spring-boot.version>2.5.3</spring-boot.version>
         <joda-time.version>2.10.5</joda-time.version>
         <google.guava.version>30.0-jre</google.guava.version>
+        <caffeine.version>2.9.3</caffeine.version>
     </properties>
     <!--定义依赖的版本，不负责依赖的引入，只负责版本的约定-->
     <dependencyManagement>
@@ -157,6 +158,16 @@
             <dependency>
                 <groupId>io.springfox</groupId>
                 <artifactId>springfox-boot-starter</artifactId>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-starter-amqp</artifactId>
+                <version>3.3.1</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
             <!--knife4j的依赖-->
 <!--            <dependency>-->

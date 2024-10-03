@@ -12,6 +12,7 @@ import com.async.stock.vo.resp.PageResult;
 import com.async.stock.vo.resp.R;
 import com.async.stock.vo.resp.ResponseCode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.pagehelper.PageHelper;
 import com.github.pagehelper.PageInfo;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +52,7 @@ public class StockServiceImpl implements StockService {
         //2.获取最近股票交易日期
         Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
         //TODO mock测试数据，后期数据通过第三方接口动态获取实时数据 可删除
-        lastDate=DateTime.parse("2022-01-02 09:32:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+        lastDate=DateTime.parse("2024-09-30 15:30:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
         //3.将获取的java Date传入接口
         List<InnerMarketDomain> list= stockMarketIndexInfoMapper.getMarketInfo(inners,lastDate);
         //4.返回查询结果
@@ -354,5 +355,33 @@ public class StockServiceImpl implements StockService {
         //3.组装数据，响应
         return R.ok(data);
     }
+
+
+
+    @Autowired
+    private Cache<String,Object> caffeineCache;
+    /**
+     * 定义获取A股大盘最新数据
+     * @return
+     */
+    @Override
+    public R<List<InnerMarketDomain>> getInnerMarketInfos() {
+        //从缓存中加载数据，如果不存在，则走补偿策略获取数据，并存入本地缓存
+        R<List<InnerMarketDomain>> data= (R<List<InnerMarketDomain>>) caffeineCache.get("innerMarketInfos", key->{
+            //如果不存在，则从数据库查询
+            //1.获取最新的股票交易时间点
+            Date lastDate = DateTimeUtil.getLastDate4Stock(DateTime.now()).toDate();
+            //TODO 伪造数据，后续删除
+            lastDate=DateTime.parse("2022-01-03 09:47:00", DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")).toDate();
+            //2.获取国内大盘编码集合
+            List<String> innerCodes = stockInfoConfig.getInner();
+            //3.调用mapper查询
+            List<InnerMarketDomain> infos= stockMarketIndexInfoMapper.getMarketInfo(innerCodes,lastDate);
+            //4.响应
+            return R.ok(infos);
+        });
+        return data;
+    }
+
 
 }

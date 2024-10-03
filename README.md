@@ -6261,3 +6261,1108 @@ while (matcher.find()) {
 ```
 
 这两个例子展示了如何使用`Pattern`和`Matcher`来进行基本的匹配操作，以及如何利用`\\b`来确保只匹配完整的单词。希望这次的整合和详细解释能帮助你全面理解Java中的正则表达式。如果还有其他问题或需要更多示例，请随时提问！
+
+# 十六、A股大盘数据采集实现
+
+![image-20241001173327577](./images/image-20241001173327577.png)
+
+## 1. 服务层
+
+定义接口：
+
+```java
+package com.async.stock.service;
+
+/**
+ * @author by async
+ * @Description 定义采集股票数据的定时任务的服务接口
+ */
+public interface StockTimerTaskService {
+    /**
+     * 获取国内大盘的实时数据信息
+     */
+    void getInnerMarketInfo();
+
+    /**
+     * 定义获取分钟级股票数据
+     */
+    //void getStockRtIndex();
+}
+```
+
+服务实现：
+
+```java
+@Service("stockTimerTaskService")
+@Slf4j
+public class StockTimerTaskServiceImpl implements StockTimerTaskService {
+
+    @Autowired
+    private RestTemplate restTemplate;
+
+    @Autowired
+    private StockInfoConfig stockInfoConfig;
+
+    @Autowired
+    private IdWorker idWorker;
+    
+	@Override
+    public void getInnerMarketInfo() {
+        //1.定义采集的url接口
+        String url=stockInfoConfig.getMarketUrl() + String.join(",",stockInfoConfig.getInner());
+        //2.调用restTemplate采集数据
+        //2.1 组装请求头
+        HttpHeaders headers = new HttpHeaders();
+        //必须填写，否则数据采集不到
+        headers.add("Referer","https://finance.sina.com.cn/stock/");
+        headers.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36");
+        //2.2 组装请求对象
+        HttpEntity<Object> entity = new HttpEntity<>(headers);
+        //2.3 resetTemplate发起请求
+        String resString = restTemplate.postForObject(url, entity, String.class);
+        //log.info("当前采集的数据：{}",resString);
+        //3.数据解析（重要）
+//        var hq_str_sh000001="上证指数,3267.8103,3283.4261,3236.6951,3290.2561,3236.4791,0,0,402626660,398081845473,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2022-04-07,15:01:09,00,";
+//        var hq_str_sz399001="深证成指,12101.371,12172.911,11972.023,12205.097,11971.334,0.000,0.000,47857870369,524892592190.995,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,0,0.000,2022-04-07,15:00:03,00";
+        String reg="var hq_str_(.+)=\"(.+)\";";
+        //编译表达式,获取编译对象
+        Pattern pattern = Pattern.compile(reg);
+        //匹配字符串
+        Matcher matcher = pattern.matcher(resString);
+        ArrayList<StockMarketIndexInfo> list = new ArrayList<>();
+        //判断是否有匹配的数值
+        while (matcher.find()){
+            //获取大盘的code
+            String marketCode = matcher.group(1);
+            //获取其它信息，字符串以逗号间隔
+            String otherInfo=matcher.group(2);
+            //以逗号切割字符串，形成数组
+            String[] splitArr = otherInfo.split(",");
+            //大盘名称
+            String marketName=splitArr[0];
+            //获取当前大盘的开盘点数
+            BigDecimal openPoint=new BigDecimal(splitArr[1]);
+            //前收盘点
+            BigDecimal preClosePoint=new BigDecimal(splitArr[2]);
+            //获取大盘的当前点数
+            BigDecimal curPoint=new BigDecimal(splitArr[3]);
+            //获取大盘最高点
+            BigDecimal maxPoint=new BigDecimal(splitArr[4]);
+            //获取大盘的最低点
+            BigDecimal minPoint=new BigDecimal(splitArr[5]);
+            //获取成交量
+            Long tradeAmt=Long.valueOf(splitArr[8]);
+            //获取成交金额
+            BigDecimal tradeVol=new BigDecimal(splitArr[9]);
+            //时间
+//            Date curTime = DateTimeUtil.getDateTimeWithoutSecond(splitArr[30] + " " + splitArr[31]).toDate();
+            // 组合日期和时间字符串
+            String dateTimeStr = splitArr[30] + " " + splitArr[31];
+
+// 解析为 DateTime 对象
+            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+            DateTime dateTime = DateTime.parse(dateTimeStr, formatter);
+
+// 去除秒部分并转换为 Date
+            Date curTime = DateTimeUtil.getDateTimeWithoutSecond(dateTime).toDate();
+
+            //组装entity对象
+            StockMarketIndexInfo info = StockMarketIndexInfo.builder()
+                    .id(idWorker.nextId())
+                    .marketCode(marketCode)
+                    .marketName(marketName)
+                    .curPoint(curPoint)
+                    .openPoint(openPoint)
+                    .preClosePoint(preClosePoint)
+                    .maxPoint(maxPoint)
+                    .minPoint(minPoint)
+                    .tradeVolume(tradeVol)
+                    .tradeAmount(tradeAmt)
+                    .curTime(curTime)
+                    .build();
+            //收集封装的对象，方便批量插入
+            list.add(info);
+        }
+        log.info("采集的当前大盘数据：{}",list);
+        //批量插入
+        if (CollectionUtils.isEmpty(list)) {
+            return;
+        }
+        //TODO 后续完成批量插入功能
+    }
+```
+
+时间问题：获取的时间中间不是空格，需要设定格式进行手动转换
+
+```java
+        //时间
+        //            Date curTime = DateTimeUtil.getDateTimeWithoutSecond(splitArr[30] + " " + splitArr[31]).toDate();
+            // 组合日期和时间字符串
+            String dateTimeStr = splitArr[30] + " " + splitArr[31];
+
+// 解析为 DateTime 对象
+            DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+            DateTime dateTime = DateTime.parse(dateTimeStr, formatter);
+
+// 去除秒部分并转换为 Date
+            Date curTime = DateTimeUtil.getDateTimeWithoutSecond(dateTime).toDate();
+```
+### 时间问题：之前的代码
+
+```java
+Date curTime = DateTimeUtil.getDateTimeWithoutSecond(DateTime.parse(splitArr[30] + " " + splitArr[31])).toDate();
+```
+
+在这段代码中，你调用了 `DateTime.parse()` 但没有提供日期时间的格式模式。Joda-Time 在这种情况下会使用默认的解析方式，该方式通常是基于 **ISO 8601 标准** 来解析日期时间字符串。ISO 8601 格式中，日期和时间的分隔符是 `T`（例如 `"2024-09-30T15:30:39"`），而不是空格。
+
+由于你提供的日期时间字符串是 `"2024-09-30 15:30:39"`，其中日期和时间之间使用空格分隔，因此 Joda-Time 无法使用默认解析规则来正确解析它，导致抛出了 **格式错误的异常**。
+
+### 时间问题：修改后的代码：
+
+```java
+Date curTime = DateTimeUtil.getDateTimeWithoutSecond(DateTime.parse(splitArr[30] + " " + splitArr[31], DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss"))).toDate();
+```
+
+在这段代码中，你明确地指定了日期时间的格式：
+
+- `"yyyy-MM-dd HH:mm:ss"` 表示：
+  - `yyyy`: 四位数的年份
+  - `MM`: 两位数的月份
+  - `dd`: 两位数的日期
+  - `HH`: 24小时制的小时
+  - `mm`: 分钟
+  - `ss`: 秒
+
+由于你的日期时间字符串正好是这个格式，比如 `"2024-09-30 15:30:39"`，所以 Joda-Time 能够根据指定的格式正确解析字符串为 `DateTime` 对象。
+
+### 时间问题：总结
+
+- **不指定格式的情况（之前的代码）**：
+  - `DateTime.parse()` 尝试使用默认的 ISO 8601 格式解析日期时间字符串，如果字符串不符合 ISO 8601 标准（例如日期和时间之间有空格而不是 `T`），则会抛出 `IllegalArgumentException`，格式不匹配。
+
+- **指定格式的情况（修改后的代码）**：
+  - 通过 `DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss")`，你明确指定了字符串的格式，确保 `DateTime.parse()` 能按照你提供的格式正确解析日期时间字符串。
+
+因此，**区别在于是否提供了明确的日期时间格式**。如果字符串格式不符合默认的 ISO 8601 标准（例如 `"2024-09-30 15:30:39"` 使用空格分隔），那么不指定格式会导致解析错误。通过指定正确的格式，可以避免这些问题并成功解析日期时间字符串。
+
+了解了，我将为你提供一个更加结构化的解释，帮助你直接对应到代码中的每一部分。
+
+### 代码结构详解
+
+#### 类定义与注解
+
+```java
+@Service("stockTimerTaskService")
+@Slf4j
+public class StockTimerTaskServiceImpl implements StockTimerTaskService {
+```
+
+- **@Service("stockTimerTaskService")**: 将这个类标记为Spring容器中的一个服务组件，可以通过名称 "stockTimerTaskService" 查找到这个服务。
+- **@Slf4j**: 通过Lombok自动生成一个日志对象，用于在类中输出日志。
+
+#### 成员变量和依赖注入
+
+```java
+@Autowired
+private RestTemplate restTemplate;
+
+@Autowired
+private StockInfoConfig stockInfoConfig;
+
+@Autowired
+private IdWorker idWorker;
+```
+
+- **RestTemplate**: 用于发起HTTP请求。
+- **StockInfoConfig**: 存储配置信息如URL等。
+- **IdWorker**: 生成唯一ID，通常用于数据库主键。
+
+#### 方法定义 - `getInnerMarketInfo`
+
+```java
+@Override
+public void getInnerMarketInfo() {
+```
+
+- 实现从StockTimerTaskService接口的方法，用于获取市场信息。
+
+#### URL定义
+
+```java
+String url = stockInfoConfig.getMarketUrl() + String.join(",", stockInfoConfig.getInner());
+```
+
+- 获取API的基本URL，并附加具体的股市代码，这些代码可能在配置类中以列表形式存在。
+
+#### 设置HTTP请求头
+
+```java
+HttpHeaders headers = new HttpHeaders();
+headers.add("Referer", "https://finance.sina.com.cn/stock/");
+headers.add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36");
+HttpEntity<Object> entity = new HttpEntity<>(headers);
+```
+
+- **HttpHeaders**: 设置请求头，模仿浏览器的请求，某些网站可能需要这些信息来正确响应请求。
+- **HttpEntity**: 包装请求头，用于随后的POST请求。
+
+#### 发起HTTP请求并接收响应
+
+```java
+String resString = restTemplate.postForObject(url, entity, String.class);
+```
+
+- 使用`RestTemplate`的`postForObject`方法发送POST请求，获取响应。这里预期响应是一个字符串。
+
+#### 解析响应数据
+
+```java
+String reg = "var hq_str_(.+)=\"(.+)\";";
+Pattern pattern = Pattern.compile(reg);
+Matcher matcher = pattern.matcher(resString);
+```
+
+- **正则表达式**: `var hq_str_(.+)="(.+)"` 用于匹配股市数据。
+- **Pattern 和 Matcher**: 用于执行正则匹配操作。
+
+#### 数据提取与对象构建
+
+```java
+while (matcher.find()) {
+    ...
+    StockMarketIndexInfo info = StockMarketIndexInfo.builder()
+        ...
+        .build();
+    list.add(info);
+}
+```
+
+- 循环遍历所有匹配结果，对每个结果使用`matcher.group()`提取股票代码和相关数据。
+- 使用Lombok的`@Builder`自动生成的建造者模式创建`StockMarketIndexInfo`对象。
+- 将每个创建的对象添加到列表中。
+
+#### 日志记录和数据处理
+
+```java
+log.info("采集的当前大盘数据：{}", list);
+if (CollectionUtils.isEmpty(list)) {
+    return;
+}
+// TODO: 实现批量插入数据库功能
+```
+
+- 使用日志记录当前采集到的所有大盘数据。
+- 检查列表是否为空，非空时进行批量插入操作。
+
+### 代码总结
+
+这段代码主要通过Spring的`RestTemplate`从特定API获取股市数据，利用正则表达式解析这些数据，并将解析的数据封装到`StockMarketIndexInfo`对象中。通过日志记录操作结果，并计划后续实现数据的批量插入数据库。这个方法可以被定时任务调用，定期更新和处理市场信息。
+
+这个正则表达式 `"var hq_str_(.+)=\"(.+)\";"` 用于匹配特定格式的字符串。我会一步一步解析这个表达式，以便您能更好地理解其工作原理。
+
+### 正则表达式组成分析
+
+#### 1. 文本匹配部分
+
+- `var hq_str_`: 这部分是字面值匹配，正则表达式会查找包含这个确切字符串的文本。
+
+#### 2. 捕获组 `(.+)`
+
+- `(.+)`: 第一个捕获组，圆括号`()`表示创建一个捕获组，用于从匹配的字符串中提取值。这里的`.+`意味着匹配一次或多次（`+`）任何字符（`.`），除了换行符。
+- 这个捕获组用于匹配`var hq_str_`之后的任何字符，直到引号`"`之前。它主要用于捕获股市指数的代码或名称。
+
+#### 3. 字符串界定符
+
+- `="`: 这部分匹配等号后紧跟一个双引号，字面意思是找到一个等号，后面直接跟一个双引号，这通常在程序或脚本中用于赋值操作。
+
+#### 4. 第二个捕获组 `(.+)`
+
+- `(.+)`: 第二个捕获组，与第一个类似，这里也是使用`.+`来匹配一个或多个任意字符。
+- 这个捕获组用于匹配双引号内的所有字符，这些通常是股市指数的具体数据。
+
+#### 5. 结束部分
+
+- `"`: 正则表达式结束于一个双引号，确保匹配结束在引号闭合处。
+- `;`: 这表示字符串声明的结束，通常在JavaScript或类似的语法中，分号用于结束一个声明。
+
+### 示例和使用场景
+
+如果你有这样的字符串：
+
+```javascript
+var hq_str_sh000001="上证指数,3267.8103,3283.4261,3236.6951,3290.2561,3236.4791,0,0,402626660,398081845473,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2022-04-07,15:01:09,00";
+```
+
+- 使用这个正则表达式，第一个捕获组`(.+)`将会匹配到`sh000001`，这通常是股市指数的代码。
+- 第二个捕获组`(.+)`将会捕获到引号内的所有数据，即`"上证指数,3267.8103,...,2022-04-07,15:01:09,00"`，这里包含了股市指数的名称、各种数值和时间戳等数据。
+
+通过这个正则表达式，程序能够从复杂的脚本或数据流中有效地提取出结构化的信息，用于进一步的数据处理或存储。这在处理Web数据抓取时特别有用。
+
+
+
+在Java中，当我们使用Lombok库的`@Builder`注解，它会自动为标注的类生成一个静态的`builder()`方法及一个相关的`Builder`类。这些自动生成的组件使得我们能够使用链式方法调用来构造一个新的实例。下面是如何使用`@Builder`注解以及它背后工作原理的详细解释：
+
+### 使用Lombok的@Builder注解
+
+1. **注解类**：在类上使用`@Builder`，Lombok将为该类生成一个构建器模式。例如：
+
+   ```java
+   import lombok.Builder;
+   
+   @Builder
+   public class StockMarketIndexInfo {
+       private long id;
+       private String marketCode;
+       private String marketName;
+       private BigDecimal curPoint;
+       private BigDecimal openPoint;
+       private BigDecimal preClosePoint;
+       private BigDecimal maxPoint;
+       private BigDecimal minPoint;
+       private BigDecimal tradeVolume;
+       private long tradeAmount;
+       private Date curTime;
+   }
+   ```
+
+2. **生成的代码**：Lombok会为`StockMarketIndexInfo`类生成一个内部的`Builder`类。这个内部类包含对应于每个字段的setter方法，这些方法返回`Builder`对象本身（这支持方法链）。此外，它还生成一个`build()`方法，用于创建`StockMarketIndexInfo`类的实例。
+
+3. **使用Builder**：你可以使用以下方式来构建`StockMarketIndexInfo`的实例：
+
+   ```java
+   StockMarketIndexInfo info = StockMarketIndexInfo.builder()
+       .id(idWorker.nextId())
+       .marketCode("someCode")
+       .marketName("someName")
+       .curPoint(new BigDecimal("123.45"))
+       .openPoint(new BigDecimal("123.00"))
+       .preClosePoint(new BigDecimal("122.00"))
+       .maxPoint(new BigDecimal("125.00"))
+       .minPoint(new BigDecimal("120.00"))
+       .tradeVolume(new BigDecimal("100000"))
+       .tradeAmount(50000)
+       .curTime(new Date())
+       .build();
+   ```
+
+   在这个例子中，`builder()`方法首次被调用，它创建了一个`Builder`对象。随后链式调用每个setter方法设置属性，最后调用`build()`方法生成`StockMarketIndexInfo`的一个实例。
+
+### 确保Lombok正常工作
+
+- **添加Lombok依赖**：确保你的`pom.xml`（Maven）或`build.gradle`（Gradle）文件中包含了Lombok依赖。
+
+  Maven:
+
+  ```xml
+  <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>最新版本</version>
+      <scope>provided</scope>
+  </dependency>
+  ```
+
+  Gradle:
+
+  ```groovy
+  compileOnly 'org.projectlombok:lombok:最新版本'
+  annotationProcessor 'org.projectlombok:lombok:最新版本'
+  ```
+
+- **IDE配置**：确保你的IDE安装了Lombok插件，并且在IDE的设置中启用了注解处理器。
+
+使用Lombok的`@Builder`可以大大简化创建和维护大型、复杂对象的代码，减少样板代码，提高开发效率。
+
+
+
+## 2. 测试
+
+#### A股大盘数据采集测试
+
+~~~java
+package com.async.stock;
+
+import com.async.stock.service.StockTimerTaskService;
+import com.google.common.collect.Lists;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.junit4.SpringRunner;
+
+import javax.annotation.Resource;
+import java.util.ArrayList;
+import java.util.List;
+@RunWith(SpringRunner.class)
+@SpringBootTest
+public class TestRestTemplate {
+
+
+    @Autowired
+    //要注意指定Bean名称，报错存在同名Bean
+    @Qualifier("stockTimerTaskServiceImpl")
+//    @Resource(name = "stockTimerTaskServiceImpl")
+    private StockTimerTaskService stockTimerService;
+
+    /**
+     * 获取大盘数据
+     */
+    @Test
+    public void test02(){
+        if (stockTimerService == null) {
+            System.out.println("stockTimerService is null");
+        }
+        stockTimerService.getInnerMarketInfo();
+    }
+
+ 
+
+}
+~~~
+
+效果：
+
+![image-20241001174200974](./images/image-20241001174200974.png)
+
+## 3. 持久层：A股大盘批量保存
+
+在StockMarketIndexInfoMapper接口添加方法：
+
+~~~java
+    /**
+     * 批量插入股票大盘数据
+     * @param infos
+     */
+    int insertBatch(List<StockMarketIndexInfo> infos);
+~~~
+
+实现：（原讲义实现有错）
+
+```xml
+<insert id="insertBatch">
+    insert into stock_market_index_info
+    ( id, market_code, cur_time, market_name, cur_point,
+      open_point, pre_close_point, max_point, min_point,
+      trade_volume, trade_amount )
+    values
+    <foreach collection="list" item="smi" separator=",">
+        (#{smi.id,jdbcType=BIGINT}, #{smi.marketCode,jdbcType=VARCHAR}, #{smi.curTime,jdbcType=TIMESTAMP},
+         #{smi.marketName,jdbcType=VARCHAR}, #{smi.curPoint,jdbcType=DECIMAL},
+         #{smi.openPoint,jdbcType=DECIMAL}, #{smi.preClosePoint,jdbcType=DECIMAL}, #{smi.maxPoint,jdbcType=DECIMAL},
+         #{smi.minPoint,jdbcType=DECIMAL}, #{smi.tradeVolume,jdbcType=DECIMAL}, #{smi.tradeAmount,jdbcType=BIGINT})
+    </foreach>
+</insert>
+
+```
+
+#### 国内大盘数据批量插入实现
+
+注入mapper，然后批量插入：(改前面方法)
+
+~~~java
+    @Autowired
+    private StockMarketIndexInfoMapper stockMarketIndexInfoMapper;  
+
+	/**
+     * 获取国内大盘数据
+     */
+    @Override
+    public void getInnerMarketInfo() {
+		//....省略N行....
+        //批量插入
+        int count = this.stockMarketIndexInfoMapper.insertBatch(infos);
+        log.info("批量插入了：{}条数据",count);
+    }
+~~~
+
+# 十七、个股数据采集
+
+### 1. 个股数据采集分析
+
+#### 1.1 股票响应数据结构说明
+
+第三方接口路径：  https://hq.sinajs.cn/list=sh601003,sh601001,sh601006
+
+![image-20241001182104781](./images/image-20241001182104781.png)
+
+
+
+~~~js
+var hq_str_sh601006="大秦铁路, 27.55, 27.25, 26.91, 27.55, 26.20, 26.91, 26.92,22114263, 589824680, 4695, 26.91, 57590, 26.90, 14700, 26.89, 14300,
+26.88, 15100, 26.87, 3100, 26.92, 8900, 26.93, 14230, 26.94, 25150, 26.95, 15220, 26.96, 2008-01-11, 15:05:32";
+这个字符串由许多数据拼接在一起，不同含义的数据用逗号隔开了，按照程序员的思路，顺序号从0开始。
+0：”大秦铁路”，股票名字；
+1：”27.55″，今日开盘价；
+2：”27.25″，昨日收盘价；
+3：”26.91″，当前价格；
+4：”27.55″，今日最高价；
+5：”26.20″，今日最低价；
+6：”26.91″，竞买价，即“买一”报价；
+7：”26.92″，竞卖价，即“卖一”报价；
+8：”22114263″，成交的股票数，由于股票交易以一百股为基本单位，所以在使用时，通常把该值除以一百；
+9：”589824680″，成交金额，单位为“元”，为了一目了然，通常以“万元”为成交金额的单位，所以通常把该值除以一万；
+10：”4695″，“买一”申请4695股，即47手；
+11：”26.91″，“买一”报价；
+12：”57590″，“买二”
+13：”26.90″，“买二”
+14：”14700″，“买三”
+15：”26.89″，“买三”
+16：”14300″，“买四”
+17：”26.88″，“买四”
+18：”15100″，“买五”
+19：”26.87″，“买五”
+20：”3100″，“卖一”申报3100股，即31手；
+21：”26.92″，“卖一”报价
+(22, 23), (24, 25), (26,27), (28, 29)分别为“卖二”至“卖四的情况”
+30：”2008-01-11″，日期；
+31：”15:05:32″，时间；
+~~~
+
+>  说明：股票请求url地址和数据结构与大盘数据一致；
+
+#### 1.2 股票编码注意事项
+
+~~~tex
+1、创业板 创业板的代码是300打头的股票代码；
+2、沪市A股 沪市A股的代码是以600、601或603打头；★
+3、沪市B股 沪市B股的代码是以900打头；
+4、深市A股 深市A股的代码是以00打头；★
+5、深圳B股 深圳B股的代码是以200打头；
+6、新股申购 沪市新股申购的代码是以730打头 深市新股申购的代码与深市股票买卖代码一样；
+7、配股代码 沪市以700打头，深市以080打头 权证，沪市是580打头 深市是031打头；
+~~~
+
+>  注意：当前的平台仅仅统计沪深两市A股的数据；
+
+#### 1.3 个股采集思路分析
+
+​	批量采集股票时，需要在请求的url地址后批量拼接股票的code编码，但是国内A股上市企业达3000+，一次性批量获取某个时间点下股票的详情数据，显然单次请求的网络I/O开销大,磁盘I/O同样如此，这样会导致数据采集耗时过长！同时受限于第三方股票接口流量控制，也不会允许单次如此大的数据量的采集任务；
+
+​	我们可以尝试先将A股的code集合拆分成若干组，然后再分批次批量获取股票的实时信息,所以接下来，我们先完成获取A股code编码集合的功能；
+
+![image-20241001182142241](./images/image-20241001182142241.png)
+
+### 2 查询个股编码集合
+
+**获取A股股票code信息**
+
+在StockBusinessMapper 接口定义方法：
+
+```java
+    /**
+     * 获取所有股票的code
+     * @return
+     */
+    List<String> getStockIds();
+```
+
+绑定xml：
+
+```xml
+    <select id="getStockIds" resultType="java.lang.String">
+        select
+            stock_code
+        from stock_business
+    </select>
+```
+
+单元测试
+
+```java
+    /**
+     * 获取A股数据
+     */
+    @Test
+    public void test02(){
+        stockTimerService.getStockRtIndex();
+    }
+```
+
+![image-20241001182415591](./images/image-20241001182415591.png)
+
+### 3 个股数据采集准备
+
+#### 3.1 解析工具类封装
+
+​	通过观察接口响应的数据，我们发现无论是A股大盘、外盘，还是个股数据，内容格式和正则解析规则都是一致的，所以我们封装一个工具类统一处理；
+
+在stock_common工程导入已封装好的股票解析工具类：
+
+> 说明：直接从 day05\资料\解析工具类\ParserStockInfoUtil.java、ParseType.java 导入即可
+
+采集股票相关数据的类型封装：
+
+~~~java
+package com.itheima.stock.constant;
+
+/**
+ * @author by itheima
+ * @Date 2022/3/18
+ * @Description 股票信息采集数据类型标识
+ */
+public class ParseType {
+
+    /**
+     * A股大盘标识
+     */
+    public static final int INNER=1;
+
+    /**
+     * 国外大盘标识
+     */
+    public static final int OUTER=2;
+
+    /**
+     * A股标识
+     */
+    public static final int ASHARE=3;
+
+}
+
+~~~
+
+股票解析工具类：
+
+~~~java
+package com.async.stock.utils;
+
+import com.google.common.base.Strings;
+import com.google.gson.Gson;
+import com.async.stock.pojo.entity.StockBlockRtInfo;
+import com.async.stock.pojo.entity.StockMarketIndexInfo;
+import com.async.stock.pojo.entity.StockOuterMarketIndexInfo;
+import com.async.stock.pojo.entity.StockRtInfo;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
+
+import java.math.BigDecimal;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+
+/**
+ * @author by async
+ * @Date 2024/9/30
+ * @Description
+ */
+public class ParserStockInfoUtil {
+
+    public ParserStockInfoUtil(IdWorker idWorker) {
+        this.idWorker = idWorker;
+    }
+
+    private IdWorker idWorker;
+
+    /**
+     * @param stockStr 大盘 股票 实时拉去原始数据(js格式解析)
+     * @param type 1:国内大盘 2.国外大盘 3.A股
+     * @return 解析后的数据
+     */
+    public List parser4StockOrMarketInfo(String stockStr,Integer  type){
+        //收集封装数据
+        List<Object> datas=new ArrayList<>();
+        //合法判断
+        if (Strings.isNullOrEmpty(stockStr)) {
+            //返回空数组
+            return datas;
+        }
+        //定义正则 第一组：匹配任意非空字符串  第二组：匹配任意除了换行符的字符串包括名称中出现空格的数据
+        String reg="var hq_str_(.+)=\"(.+)\";";
+        //编译正则，获取正则对象
+        Pattern pattern = Pattern.compile(reg);
+        //获取正则匹配器
+        Matcher matcher = pattern.matcher(stockStr);
+        while (matcher.find()) {
+            //解析国内股票大盘
+            if (type==1){
+                StockMarketIndexInfo info=parser4InnerStockMarket(matcher.group(1),matcher.group(2));
+                datas.add(info);
+            }
+            //国外大盘
+            if (type==2) {
+                StockOuterMarketIndexInfo info=parser4OuterStockMarket(matcher.group(1),matcher.group(2));
+                datas.add(info);
+            }
+            //国内A股信息
+            if(type==3){
+                StockRtInfo info=parser4StockRtInfo(matcher.group(1),matcher.group(2));
+                datas.add(info);
+            }
+        }
+        return datas;
+    }
+
+    /**
+     * 解析国内A股数据
+     * @param stockCode 股票ID
+     * @param otherInfo 股票其它信息，以逗号间隔
+     * @return
+     */
+    private StockRtInfo parser4StockRtInfo(String stockCode, String otherInfo) {
+        // 去除股票sz或者sh前缀 shxxxx
+        stockCode = stockCode.substring(2);
+        String[] others = otherInfo.split(",");
+
+        // 大盘名称
+        String stockName = others[0];
+
+        // 今日开盘价
+        BigDecimal openPrice = new BigDecimal(others[1]);
+
+        // 昨日收盘价
+        BigDecimal preClosePrice = new BigDecimal(others[2]);
+
+        // 当前价格
+        BigDecimal currentPrice = new BigDecimal(others[3]);
+
+        // 今日最高价
+        BigDecimal maxPrice = new BigDecimal(others[4]);
+
+        // 今日最低价
+        BigDecimal minPrice = new BigDecimal(others[5]);
+
+        // 成交量
+        Long tradeAmount = Long.valueOf(others[8]);
+
+        // 成交金额
+        BigDecimal tradeVol = new BigDecimal(others[9]);
+
+        // 当前日期时间，明确指定日期时间格式
+        DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss");
+        Date curDateTime = DateTimeUtil.getDateTimeWithoutSecond(
+                DateTime.parse(others[30] + " " + others[31], formatter)
+        ).toDate();
+
+        // 构建 StockRtInfo 对象
+        StockRtInfo stockRtInfo = StockRtInfo.builder()
+                .id(idWorker.nextId())
+                .stockCode(stockCode)
+                .stockName(stockName)
+                .openPrice(openPrice)
+                .preClosePrice(preClosePrice)
+                .curPrice(currentPrice)
+                .maxPrice(maxPrice)
+                .minPrice(minPrice)
+                .tradeAmount(tradeAmount)
+                .tradeVolume(tradeVol)
+                .curTime(curDateTime)
+                .build();
+
+        return stockRtInfo;
+    }
+
+
+    /**
+     * 解析国外大盘数据
+     * @param marketCode 大盘ID
+     * @param otherInfo 大盘其它信息，以逗号间隔
+     * @return
+     */
+    private StockOuterMarketIndexInfo parser4OuterStockMarket(String marketCode, String otherInfo) {
+        //其他信息
+        String[] others=otherInfo.split(",");
+        //大盘名称
+        String marketName = others[0];
+        //大盘点数
+        BigDecimal curPoint = new BigDecimal(others[1]);
+        //涨跌值
+        BigDecimal upDown = new BigDecimal(others[2]);
+        //涨幅
+        BigDecimal rose = new BigDecimal(others[3]);
+        //获取当前时间
+        Date now=DateTimeUtil.getDateTimeWithoutSecond(DateTime.now()).toDate();
+        //组装实体对象
+        StockOuterMarketIndexInfo smi = StockOuterMarketIndexInfo.builder()
+                .id(idWorker.nextId())
+                .marketCode(marketCode)
+                .curPoint(curPoint)
+                .updown(upDown)
+                .rose(rose)
+                .curTime(now)
+                .build();
+        return smi;
+    }
+
+    /**
+     * 解析国内大盘数据
+     * @param marketCode 大盘ID
+     * @param otherInfo 大盘其它信息，以逗号间隔
+     * @return
+     */
+    private StockMarketIndexInfo parser4InnerStockMarket(String marketCode, String otherInfo) {
+        //其他信息
+        String[] splitArr=otherInfo.split(",");
+        //大盘名称
+        String marketName=splitArr[0];
+        //获取当前大盘的点数
+        BigDecimal openPoint=new BigDecimal(splitArr[1]);
+        //获取大盘的涨跌值
+        BigDecimal preClosePoint=new BigDecimal(splitArr[2]);
+        //获取大盘的涨幅
+        BigDecimal curPoint=new BigDecimal(splitArr[3]);
+        //获取大盘最高点
+        BigDecimal maxPoint=new BigDecimal(splitArr[4]);
+        //获取大盘的涨幅
+        BigDecimal minPoint=new BigDecimal(splitArr[5]);
+        //获取成交量
+        Long tradeAmt=Long.valueOf(splitArr[8]);
+        //获取成交金额
+        BigDecimal tradeVol=new BigDecimal(splitArr[9]);
+        //时间
+        Date curTime = DateTimeUtil.getDateTimeWithoutSecond(DateTime.parse(splitArr[30] + " " + splitArr[31])).toDate();
+        //组装实体对象
+        StockMarketIndexInfo smi = StockMarketIndexInfo.builder()
+                .id(idWorker.nextId())
+                .marketCode(marketCode)
+                .marketName(marketName)
+                .curPoint(curPoint)
+                .openPoint(openPoint)
+                .preClosePoint(preClosePoint)
+                .maxPoint(maxPoint)
+                .minPoint(minPoint)
+                .tradeVolume(tradeVol)
+                .tradeAmount(tradeAmt)
+                .curTime(curTime)
+                .build();
+        return smi;
+    }
+
+
+    /**
+     * 转化板块数据获取集合信息
+     * @param stockStr
+     * @return
+     */
+    public List<StockBlockRtInfo> parse4StockBlock(String stockStr){
+        if (Strings.isNullOrEmpty(stockStr)|| !stockStr.contains("=")){
+            return Collections.emptyList();
+        }
+        String jsonStr = stockStr.substring(stockStr.indexOf("=") + 1);
+        HashMap mapInfo = new Gson().fromJson(jsonStr, HashMap.class);
+        System.out.println(mapInfo);
+        Collection values = mapInfo.values();
+        List<StockBlockRtInfo> collect = (List<StockBlockRtInfo>) mapInfo.values().stream().map(restStr -> {
+            String infos = (String) restStr;
+            String[] infoArray = infos.split(",");
+            //板块编码
+            String label = infoArray[0];
+            //板块行业
+            String blockName = infoArray[1];
+            //板块公司数量
+            Integer companyNum = Integer.valueOf(infoArray[2]);
+            //均价
+            BigDecimal avgPrice = new BigDecimal(infoArray[3]);
+            //涨跌幅度
+            BigDecimal priceLimit = new BigDecimal(infoArray[5]);
+            //涨跌率
+            //BigDecimal updownRate=new BigDecimal(infoArray[5]);
+            //总成交量
+            Long tradeAmount = Long.valueOf(infoArray[6]);
+            //总成交金额
+            BigDecimal tradeVolume = new BigDecimal(infoArray[7]);
+            //当前日期
+            Date now=DateTimeUtil.getDateTimeWithoutSecond(DateTime.now()).toDate();
+            //构建板块信息对象
+            StockBlockRtInfo blockRtInfo = StockBlockRtInfo.builder().id(Long.valueOf(idWorker.nextId()+"")).label(label)
+                    .blockName(blockName).companyNum(companyNum).avgPrice(avgPrice).curTime(now)
+                    .updownRate(priceLimit).tradeAmount(tradeAmount).tradeVolume(tradeVolume)
+                    .build();
+            return blockRtInfo;
+        }).collect(Collectors.toList());
+        return collect;
+    }
+}
+~~~
+
+效果：
+
+![image-20241001182721124](./images/image-20241001182721124.png)
+
+在stock_job工程配置解析工具类bean:
+
+~~~java
+@Configuration
+@EnableConfigurationProperties(StockInfoConfig.class)//开启常用参数配置bean
+public class CommonConfig {
+ 	//......
+    /**
+     * 配置解析工具bean
+     * @param idWorker
+     * @return
+     */
+    @Bean
+    public ParserStockInfoUtil parserStockInfoUtil(IdWorker idWorker){
+        return new ParserStockInfoUtil(idWorker);
+    } 
+}
+~~~
+
+#### 3.2 集合分片实现
+
+​	国内A股上市公司3000+，显然单次不好全量采集完成。所以我们需要将股票的编码集合拆分成若均等组，然后分批次采集，这样即避免了单次全量采集股票信息导致的过高的I/O开销（网络和磁盘I/O），同时也绕过了对方的服务限流；
+
+​	我们可基于guava提供的工具集实现集合的分片处理，示例代码如下：
+
+~~~java
+    @Test
+    public void testPartion() {
+        List<Integer> all=new ArrayList<>();
+        for (int i = 1; i <= 50; i++) {
+            all.add(i);
+        }
+        //将集合均等分，每份大小最多15个
+        Lists.partition(all,15).forEach(ids->{
+            System.out.println(ids);
+        });
+    }
+~~~
+
+效果：
+
+~~~tex
+[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+[16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+[31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]
+[46, 47, 48, 49, 50]
+~~~
+
+### 4 定义股票拉取服务接口方法
+
+在StockTimerService接口下定义：
+
+~~~java
+    /**
+     * 定义获取分钟级股票数据
+     */
+void getStockRtIndex();
+~~~
+
+在StockTimerServiceImpl下实现：
+
+~~~java
+    //注入格式解析bean
+    @Autowired
+    private ParserStockInfoUtil parserStockInfoUtil;
+
+    @Autowired
+    private StockBusinessMapper stockBusinessMapper;
+
+    @Autowired
+    private StockRtInfoMapper stockRtInfoMapper;
+
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+    /**
+     * 批量获取股票分时数据详情信息
+     * http://hq.sinajs.cn/list=sz000002,sh600015
+     */
+    @Override
+    public void getStockRtIndex() {
+        //批量获取股票ID集合
+        List<String> stockIds = stockBusinessMapper.getStockIds();
+        //计算出符合sina命名规范的股票id数据
+        stockIds = stockIds.stream().map(id -> {
+            return id.startsWith("6") ? "sh" + id : "sz" + id;
+        }).collect(Collectors.toList());
+        //设置公共请求头对象
+        //设置请求头数据
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Referer","https://finance.sina.com.cn/");
+        headers.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36");
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        //一次性查询过多，我们将需要查询的数据先进行分片处理，每次最多查询20条股票数据
+        Lists.partition(stockIds,20).forEach(list->{
+            //拼接股票url地址
+            String stockUrl=stockInfoConfig.getMarketUrl()+String.join(",",list);
+            //获取响应数据
+            String result = restTemplate.postForObject(stockUrl,entity,String.class);
+            List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
+            log.info("数据量：{}",infos.size());
+//            log.info("数据：{}",infos);
+            //以下是批量插入和rabbitMq：后面的内容，就不注释了
+            int count = stockRtInfoMapper.insertBatch(infos);
+            log.info("插入数据量：{}",count);
+            //通知后台终端刷新本地缓存，发送的日期数据是告知对方当前更新的股票数据所在时间点
+            rabbitTemplate.convertAndSend("stockExchange","inner.market",new Date());
+        });
+    }
+~~~
+
+### 5 个股数据批量保存功能实现
+
+#### 5.1 定义mapper接口方法和xml
+
+在StockRtInfoMapper接口方法下定义：
+
+~~~java
+    /**
+     * 批量插入功能
+     * @param stockRtInfoList
+     */
+    int insertBatch(List<StockRtInfo> stockRtInfoList);
+~~~
+
+在StockRtInfoMapper.xml定义绑定sql：
+
+~~~xml
+    <insert id="insertBatch">
+        insert into stock_rt_info
+          ( id,stock_code,cur_time
+          ,stock_name,open_price,pre_close_price
+          ,cur_price,max_price,min_price
+          ,trade_amount,trade_volume)
+        values
+          <foreach collection="list" item="si" separator=",">
+              (#{si.id,jdbcType=BIGINT},#{si.stockCode,jdbcType=CHAR},#{si.curTime,jdbcType=TIMESTAMP}
+              ,#{si.stockName,jdbcType=VARCHAR},#{si.openPrice,jdbcType=DECIMAL},#{si.preClosePrice,jdbcType=DECIMAL}
+              ,#{si.curPrice,jdbcType=DECIMAL},#{si.maxPrice,jdbcType=DECIMAL},#{si.minPrice,jdbcType=DECIMAL}
+              ,#{si.tradeAmount,jdbcType=BIGINT},#{si.tradeVolume,jdbcType=DECIMAL})
+          </foreach>
+        <!-- 新增的部分，用于处理唯一键冲突时更新数据 -->
+        ON DUPLICATE KEY UPDATE
+        stock_name = VALUES(stock_name),
+        open_price = VALUES(open_price),
+        pre_close_price = VALUES(pre_close_price),
+        cur_price = VALUES(cur_price),
+        max_price = VALUES(max_price),
+        min_price = VALUES(min_price),
+        trade_amount = VALUES(trade_amount),
+        trade_volume = VALUES(trade_volume),
+        cur_time = VALUES(cur_time);
+    </insert>
+~~~
+
+#### 5.2 修改股票拉取服务逻辑
+
+前面已经改了：
+
+~~~java
+    /**
+     * 批量获取股票分时数据详情信息
+     * http://hq.sinajs.cn/list=sz000002,sh600015
+     */
+    @Override
+    public void getStockRtIndex() {
+        //批量获取股票ID集合
+        List<String> stockIds = stockBusinessMapper.getStockIds();
+        //计算出符合sina命名规范的股票id数据
+         stockIds = stockIds.stream().map(id -> {
+            return id.startsWith("6") ? "sh" + id : "sz" + id;
+        }).collect(Collectors.toList());
+        //一次性查询过多，我们将需要查询的数据先进行分片处理，每次最多查询20条股票数据
+        Lists.partition(stockIds,20).forEach(list->{
+            //拼接股票url地址
+            String stockUrl=stockInfoConfig.getMarketUrl()+String.join(",",list);
+            //获取响应数据
+            String result = restTemplate.getForObject(stockUrl, String.class);
+            List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
+            log.info("数据量：{}",infos.size());
+            //批量插入数据库
+            stockRtInfoMapper.insertBatch(infos);
+        });
+    }
+~~~
+

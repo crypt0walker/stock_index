@@ -1,6 +1,7 @@
 package com.async.stock.service.impl;
 import com.async.stock.constant.ParseType;
 import com.async.stock.mapper.StockBusinessMapper;
+import com.async.stock.mapper.StockMarketIndexInfoMapper;
 import com.async.stock.mapper.StockRtInfoMapper;
 import com.async.stock.pojo.domain.StockInfoConfig;
 import com.async.stock.pojo.entity.StockMarketIndexInfo;
@@ -16,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.joda.time.DateTime;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -43,6 +45,9 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
 
     @Autowired
     private IdWorker idWorker;
+
+    @Autowired
+    private StockMarketIndexInfoMapper stockMarketIndexInfoMapper;
 
     @Override
     public void getInnerMarketInfo() {
@@ -126,7 +131,8 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
         if (CollectionUtils.isEmpty(list)) {
             return;
         }
-        //TODO 后续完成批量插入功能
+        int count = this.stockMarketIndexInfoMapper.insertBatch(list);
+        log.info("批量插入了：{}条数据",count);
     }
 
     //注入格式解析bean
@@ -139,6 +145,8 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
     @Autowired
     private StockRtInfoMapper stockRtInfoMapper;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
     /**
      * 批量获取股票分时数据详情信息
      * http://hq.sinajs.cn/list=sz000002,sh600015
@@ -165,9 +173,11 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
             String result = restTemplate.postForObject(stockUrl,entity,String.class);
             List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
             log.info("数据量：{}",infos.size());
-            log.info("数据：{}",infos);
-            //TODO 批量插入
-            stockRtInfoMapper.insertBatch(infos);
+//            log.info("数据：{}",infos);
+            int count = stockRtInfoMapper.insertBatch(infos);
+            log.info("插入数据量：{}",count);
+            //通知后台终端刷新本地缓存，发送的日期数据是告知对方当前更新的股票数据所在时间点
+            rabbitTemplate.convertAndSend("stockExchange","inner.market",new Date());
         });
     }
     /**
