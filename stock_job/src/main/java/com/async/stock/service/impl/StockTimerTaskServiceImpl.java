@@ -21,6 +21,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
@@ -145,8 +146,16 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
     @Autowired
     private StockRtInfoMapper stockRtInfoMapper;
 
+
+
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    /**
+     * 注入线程池对象
+     */
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     /**
      * 批量获取股票分时数据详情信息
      * http://hq.sinajs.cn/list=sz000002,sh600015
@@ -154,6 +163,7 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
     @Override
     public void getStockRtIndex() {
         //批量获取股票ID集合
+//        List<String> stockIds = stockRtInfoMapper.getAllStockIds();
         List<String> stockIds = stockBusinessMapper.getStockIds();
         //计算出符合sina命名规范的股票id数据
         stockIds = stockIds.stream().map(id -> {
@@ -166,18 +176,22 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
         headers.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36");
         HttpEntity<String> entity = new HttpEntity<>(headers);
         //一次性查询过多，我们将需要查询的数据先进行分片处理，每次最多查询20条股票数据
-        Lists.partition(stockIds,20).forEach(list->{
-            //拼接股票url地址
-            String stockUrl=stockInfoConfig.getMarketUrl()+String.join(",",list);
-            //获取响应数据
-            String result = restTemplate.postForObject(stockUrl,entity,String.class);
-            List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
-            log.info("数据量：{}",infos.size());
-//            log.info("数据：{}",infos);
-            int count = stockRtInfoMapper.insertBatch(infos);
-            log.info("插入数据量：{}",count);
-            //通知后台终端刷新本地缓存，发送的日期数据是告知对方当前更新的股票数据所在时间点
-            rabbitTemplate.convertAndSend("stockExchange","inner.market",new Date());
+        //此处改进，使用线程池与mq
+        //每个分片的数据开启一个线程异步执行任务
+        Lists.partition(stockIds, 20).forEach(list -> {
+            threadPoolTaskExecutor.execute(()-> {
+                //拼接股票url地址
+                String stockUrl = stockInfoConfig.getMarketUrl() + String.join(",", list);
+                //获取响应数据
+                String result = restTemplate.postForObject(stockUrl, entity, String.class);
+                List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
+                log.info("数据量：{}", infos.size());
+                //            log.info("数据：{}",infos);
+                int count = stockRtInfoMapper.insertBatch(infos);
+                log.info("插入数据量：{}", count);
+                //通知后台终端刷新本地缓存，发送的日期数据是告知对方当前更新的股票数据所在时间点
+                rabbitTemplate.convertAndSend("stockExchange", "inner.market", new Date());
+            });
         });
     }
     /**
@@ -205,4 +219,8 @@ public class StockTimerTaskServiceImpl implements StockTimerTaskService {
 //            stockRtInfoMapper.insertBatch(infos);
 //        });
 //    }
+
+
+
+
 }

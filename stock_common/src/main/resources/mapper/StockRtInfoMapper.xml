@@ -149,6 +149,10 @@
           and sri2.stock_code=#{stockCode}
         order by sri2.cur_time
     </select>
+    <select id="getAllStockIds" resultType="java.lang.String">
+        select sri.stock_code
+        from stock_rt_info as sri
+    </select>
 
     <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
         delete from stock_db.stock_rt_info

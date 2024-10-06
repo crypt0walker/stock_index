@@ -1350,6 +1350,7 @@ JWT 是一种无状态的认证方式，通常的工作流程如下：
 3. **生成 JWT Token**：验证成功后，服务器生成一个 JWT，其中包含了用户的身份信息，并返回给前端。
 4. **前端保存 Token**：前端通常会将 Token 保存在 **浏览器的 localStorage 或 sessionStorage** 中。
 5. **前端每次请求时携带 Token**：前端在每次向后端发送请求时，将 Token 放在 **HTTP 请求头** 中，通常是 `Authorization` 头中，格式如下：
+   
    ```
    Authorization: Bearer <token>
    ```
@@ -7366,3 +7367,3256 @@ void getStockRtIndex();
     }
 ~~~
 
+# 十八、定时多线程获取股票数据
+
+## 1、XXL-JOB介绍
+
+### 1.1 XXL-JOB概述
+
+​	XXL-JOB是一个轻量级分布式任务调度平台，其核心设计目标是开发迅速、学习简单、轻量级、易扩展。现已开放源代码并接入多家公司线上产品线，开箱即用。
+​	目前已有多家公司接入xxl-job，包括比较知名的大众点评，京东，优信二手车，北京尚德，360金融 (360)，联想集团 (联想)，易信 (网易)等;
+
+### 1.2 XXL-JOB特性
+
+   官方地址：http://www.xuxueli.com/xxl-job
+
+![image-20241006153902088](./images/image-20241006153902088.png)
+
+> 更多详情见官网;
+
+### 1.3 整体架构
+
+![image-20241006153912166](./images/image-20241006153912166.png)
+
+## 2、XXL-JOB任务中心环境搭建
+
+### 2.1 XXL-JOB源码下载
+
+> 选择最新的2.30版本下载，资料已经下载：**day06\资料\xxljob\xxl-job-2.3.0.zip**
+
+### 2.2 IDEA导入xxljob工程
+
+![image-20241006153941329](./images/image-20241006153941329.png)
+
+### 2.3 初始化数据库
+
+将xxljob提供的SQL脚本导入到mysql容器服务中：
+
+![image-20241006153958058](./images/image-20241006153958058.png)
+
+整体如下：
+
+![image-20241006154024913](./images/image-20241006154024913.png)
+
+>  注意：
+>
+>  如果表xxl_job_registry导入过程报Specified key was too long; max key length is 767 bytes错误，则将i_g_k_v联合索引相关字段的varchar改小一些即可；
+
+### 2.4 Docker安装任务管理中心
+
+拉取xxl-job-admin任务中心镜像：
+
+~~~shell
+docker pull xuxueli/xxl-job-admin:2.3.0
+~~~
+
+启动xxl-job任务中心容器：
+
+启动xxl-job任务中心容器：
+
+~~~shell
+# 在指定目录构建xxldata目录，然后运行如下docker指令：
+docker run -e PARAMS="--spring.datasource.url=jdbc:mysql://192.168.22.132:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=UTC --spring.datasource.username=root --spring.datasource.password=root" -p 8093:8080  -v $PWD/xxldata:/data/applogs --name=xxl-job-admin -d xuxueli/xxl-job-admin:2.3.0
+~~~
+
+访问容器服务：
+
+~~~http
+http://192.168.22.132:8093/xxl-job-admin
+~~~
+
+效果如下：
+
+登录：admin，123456
+
+![image-20241006153810588](./images/image-20241006153810588.png)
+
+## 3、XXL-JOB任务注册测试
+
+### 3.1 引入xxl-job核心依赖
+
+通过官方提供的xxljob代码，我们可知道在xxl-job-executor-sample-springboot工程中引入和xxljob的核心依赖：
+
+~~~xml
+<!-- xxl-job-core -->
+<dependency>
+    <groupId>com.xuxueli</groupId>
+    <artifactId>xxl-job-core</artifactId>
+    <version>${project.parent.version}</version>
+</dependency>
+~~~
+
+> 将来我们的项目也可通过这种方式集成xxl-job
+
+### 3.2 配置xxljob相关信息
+
+接下来就是配置任务工程信息：
+
+![image-20241006195541528](./images/image-20241006195541528.png)
+
+![image-20241006195533749](./images/image-20241006195533749.png)
+
+配置完毕后，工程底层通过XxlJobConfig配置类加载配置信息，实现xxljob相关资源的初始化工作：
+
+~~~java
+package com.xxl.job.executor.core.config;
+@Configuration
+public class XxlJobConfig {
+    private Logger logger = LoggerFactory.getLogger(XxlJobConfig.class);
+
+    @Value("${xxl.job.admin.addresses}")
+    private String adminAddresses;
+
+    @Value("${xxl.job.accessToken}")
+    private String accessToken;
+
+    @Value("${xxl.job.executor.appname}")
+    private String appname;
+
+    @Value("${xxl.job.executor.address}")
+    private String address;
+
+    @Value("${xxl.job.executor.ip}")
+    private String ip;
+
+    @Value("${xxl.job.executor.port}")
+    private int port;
+
+    @Value("${xxl.job.executor.logpath}")
+    private String logPath;
+
+    @Value("${xxl.job.executor.logretentiondays}")
+    private int logRetentionDays;
+    @Bean
+    public XxlJobSpringExecutor xxlJobExecutor() {
+        logger.info(">>>>>>>>>>> xxl-job config init.");
+        XxlJobSpringExecutor xxlJobSpringExecutor = new XxlJobSpringExecutor();
+        xxlJobSpringExecutor.setAdminAddresses(adminAddresses);
+        xxlJobSpringExecutor.setAppname(appname);
+        xxlJobSpringExecutor.setAddress(address);
+        xxlJobSpringExecutor.setIp(ip);
+        xxlJobSpringExecutor.setPort(port);
+        xxlJobSpringExecutor.setAccessToken(accessToken);
+        xxlJobSpringExecutor.setLogPath(logPath);
+        xxlJobSpringExecutor.setLogRetentionDays(logRetentionDays);
+        return xxlJobSpringExecutor;
+    }
+}
+~~~
+
+### 3.3 定义定时任务执行方法
+
+~~~java
+package com.xxl.job.executor.service.jobhandler;
+@Component
+public class SampleXxlJob {
+    private static Logger logger = LoggerFactory.getLogger(SampleXxlJob.class);
+
+
+    /**
+     * 1、简单任务示例（Bean模式）
+     */
+    @XxlJob("demoJobHandler")
+    public void demoJobHandler() throws Exception {
+       //todo 打印时间
+       System.out.println("hello xxljob.....");
+    }
+
+	//.....省略......
+
+    /**
+     * 5、生命周期任务示例：任务初始化与销毁时，支持自定义相关逻辑；
+     */
+    @XxlJob(value = "demoJobHandler2", init = "init", destroy = "destroy")
+    public void demoJobHandler2() throws Exception {
+        XxlJobHelper.log("XXL-JOB, Hello World.");
+    }
+    public void init(){
+        logger.info("init");
+    }
+    public void destroy(){
+        logger.info("destory");
+    }
+}
+~~~
+
+> 说明：
+>
+> @XxlJob中的value值就是定时任务的一个标识，注解作用的方法就是定时任务要执行逻辑的逻辑方法；
+
+### 3.4 配置任务执行器
+
+![image-20241006195616270](./images/image-20241006195616270.png)
+
+> 注意：如果自动注册不识别，可手动录入执行服务地址，格式比如：http://192.168.200.1:9999
+
+### 3.5 配置任务执行计划
+
+接下来，我们将xxl-job-executor-sample-springboot工程下的demoJobHandler任务，可视化配置，并启动：
+
+![image-20241006195642984](./images/image-20241006195642984.png)
+
+接下来，输入JobHanler，输入的名称保证与@xxljob注解下的value值一致即可：
+
+![image-20241006195700161](./images/image-20241006195700161.png)
+
+启动任务查看执行效果：
+
+![image-20241006195730323](./images/image-20241006195730323.png)
+
+## 3、股票数据周期采集实现
+
+### 3.1 stock_job工程集成xxljob
+
+我们按照xxl-job-executor-sample-springboot工程整合流程，将xxljob整合到stock_job工程下，流程如下：
+
+**1）stock_job工程引入核心依赖**
+
+~~~xml
+<!--引入xxljob核心依赖-->
+<dependency>
+    <groupId>com.xuxueli</groupId>
+    <artifactId>xxl-job-core</artifactId>
+</dependency>
+~~~
+
+**2）在application-stock.yml就行添加xxljob配置**
+
+~~~yaml
+# 服务器端口配置
+#server:(主配置已经有)
+#  port: 8081
+
+# Spring框架的web环境设置，此处禁用web环境
+spring:
+  main:
+    web-environment: false
+
+# 日志配置路径
+logging:
+  config: classpath:logback.xml
+
+# XXL-Job的相关配置
+xxl:
+  job:
+    # XXL-Job管理员控制台的地址,这里我们使用docker服务器地址以及对应管理端口
+    admin:
+      addresses: http://192.168.22.132:8093/xxl-job-admin
+    # XXL-Job的访问令牌，如果不使用则为空
+    accessToken: ""
+    # 执行器配置
+    executor:
+      # 执行器的应用名称
+      appname: async-test
+      # 执行器的注册地址，默认使用此地址进行注册，如果为空则使用ip:port
+      address:
+      # 执行器的IP地址，如果注册地址为空，则需要此项
+      ip:
+      # 执行器的端口号
+      port: 7979
+      # 执行器日志路径
+      logpath: /data/applogs/xxl-job/jobhandler
+      # 日志保留天数
+      logretentiondays: 30
+
+~~~
+
+> 注意：.gitignore文件中应忽略logs目录
+
+激活该配置：
+
+~~~yaml
+spring:
+	profiles:
+		active: stock
+~~~
+
+**3）定义xxljob 核心配合bean**
+
+我们直接将xxl-job-executor-sample-springboot工程下的XxlJobConfig类复制过来即可：
+
+~~~java
+package com.async.stock.config;
+
+import com.xxl.job.core.executor.impl.XxlJobSpringExecutor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * xxl-job config
+ *
+ * @author xuxueli 2017-04-28
+ */
+@Configuration
+public class XxlJobConfig {
+    private Logger logger = LoggerFactory.getLogger(XxlJobConfig.class);
+
+    @Value("${xxl.job.admin.addresses}")
+    private String adminAddresses;
+
+    @Value("${xxl.job.accessToken}")
+    private String accessToken;
+
+    @Value("${xxl.job.executor.appname}")
+    private String appname;
+
+    @Value("${xxl.job.executor.address}")
+    private String address;
+
+    @Value("${xxl.job.executor.ip}")
+    private String ip;
+
+    @Value("${xxl.job.executor.port}")
+    private int port;
+
+    @Value("${xxl.job.executor.logpath}")
+    private String logPath;
+
+    @Value("${xxl.job.executor.logretentiondays}")
+    private int logRetentionDays;
+
+
+    @Bean
+    public XxlJobSpringExecutor xxlJobExecutor() {
+        logger.info(">>>>>>>>>>> xxl-job config init.");
+        XxlJobSpringExecutor xxlJobSpringExecutor = new XxlJobSpringExecutor();
+        xxlJobSpringExecutor.setAdminAddresses(adminAddresses);
+        xxlJobSpringExecutor.setAppname(appname);
+        xxlJobSpringExecutor.setAddress(address);
+        xxlJobSpringExecutor.setIp(ip);
+        xxlJobSpringExecutor.setPort(port);
+        xxlJobSpringExecutor.setAccessToken(accessToken);
+        xxlJobSpringExecutor.setLogPath(logPath);
+        xxlJobSpringExecutor.setLogRetentionDays(logRetentionDays);
+
+        return xxlJobSpringExecutor;
+    }
+
+    /**
+     * 针对多网卡、容器内部署等情况，可借助 "spring-cloud-commons" 提供的 "InetUtils" 组件灵活定制注册IP；
+     *
+     *      1、引入依赖：
+     *          <dependency>
+     *             <groupId>org.springframework.cloud</groupId>
+     *             <artifactId>spring-cloud-commons</artifactId>
+     *             <version>${version}</version>
+     *         </dependency>
+     *
+     *      2、配置文件，或者容器启动变量
+     *          spring.cloud.inetutils.preferred-networks: 'xxx.xxx.xxx.'
+     *
+     *      3、获取IP
+     *          String ip_ = inetUtils.findFirstNonLoopbackHostInfo().getIpAddress();
+     */
+
+
+}
+~~~
+
+**4）定义任务处理器jobhandler**
+
+~~~java
+package com.async.stock.job;
+
+import com.async.stock.service.StockTimerTaskService;
+import com.async.stock.service.impl.StockTimerTaskServiceImpl;
+import com.xxl.job.core.handler.annotation.XxlJob;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+/**
+ * 定义股票相关数据的定时任务
+ * @author laofang
+ */
+@Component
+public class StockJob {
+    @XxlJob("hema_job_test")
+    public void jobTest(){
+        System.out.println("jobTest run.....");
+    }
+
+    /**
+     * 注入股票定时任务服务bean
+     */
+    @Autowired
+    private StockTimerTaskServiceImpl stockTimerTaskService;
+
+
+    /**
+     * 定义定时任务，采集国内大盘数据
+     */
+    @XxlJob("getStockInnerMarketInfos")
+    public void getStockInnerMarketInfos(){
+        stockTimerTaskService.getInnerMarketInfo();
+    }
+    /**
+     * 定时采集A股数据
+     */
+    @XxlJob("getStockInfos")
+    public void getStockInfos(){
+        stockTimerTaskService.getStockRtIndex();
+    }
+    //.....
+}
+~~~
+
+**5）启动stock_job工程并配置执行器信息**
+
+此时，需要在任务中心执行中手动添加执行器信息：
+
+<img src="./images/image-20241006171428939.png" alt="image-20241006171428939" style="zoom:50%;" />
+
+
+
+其中机器地址填写宿主机ip，也就是说由宿主机来进行任务的执行。
+
+配置任务执行计划：
+
+![image-20241006171411545](./images/image-20241006171411545.png)
+
+然后启动任务：因为不在股票开盘时间，所以执行一次查看是否成功
+
+![image-20241006200422328](./images/image-20241006200422328.png)
+
+任务顺利启动：
+
+![image-20241006174024435](./images/image-20241006174024435.png)
+
+![image-20241006174013910](./images/image-20241006174013910.png)
+
+### 3.2 定义大盘数据采集任务
+
+#### 3.2.1 定义采集大盘任务方法
+
+~~~java
+/**
+ * 定义股票相关数据的定时任务
+ * @author laofang
+ */
+@Component
+public class StockJob {
+
+    /**
+     * 注入股票定时任务服务bean
+     */
+    @Autowired
+    private StockTimerTaskService stockTimerTaskService;
+
+
+    /**
+     * 定义定时任务，采集国内大盘数据
+     */
+    @XxlJob("getStockInnerMarketInfos")
+    public void getStockInnerMarketInfos(){
+        stockTimerTaskService.getInnerMarketInfo();
+    }
+    //.....
+}    
+~~~
+
+#### 3.2.2 定义大盘任务cron表达式
+
+##### 3.2.2.1 国内大盘cron表达式分析
+
+分析：
+
+- 国内大盘开盘周期是从周1到周5，每天上午的9:30至11:30和下午的1:00至3:00（节假日暂时不考虑）
+- 使用cron表达式不好一次性定义，所以我们可以将任务整体以半小时分段处理，整体分段如下：![image-20220107121100108](./C:/Users/16232/Desktop/项目1-今日指数课件/day06-股票流水定时多线程采集实现/讲义/img/image-20220107121100108.png)
+
+##### 3.2.2.2 配置cron表达式
+
+**1）前半小时配置**
+
+**2）后半小时配置**
+
+> 注意：
+>
+> 因为xxl-job-admin工程进行定时任务时，需要参照系统时间，**如果系统时间错误，则会导致任务不能被准时执行**！
+>
+> 参照：day06-股票流水定时多线程采集实现\资料\Centos下MySql日期校准.png
+
+### 3.4 国内股票数据采集任务实现
+
+~~~java
+    /**
+     * 定时采集A股数据
+     */
+    @XxlJob("getStockRtIndex")
+    public void getStockRtIndex(){
+        stockTimerTaskService.getStockRtIndex();
+    }
+~~~
+
+> 说明：
+>
+> 1.xxljob日期采集配置策略与国内大盘采集策略一致！
+>
+> 2.由于个股数据比较多，新浪后台也会存在更新延迟问题，所以采集过程可能会获取重复的数据，我们利用数据库的唯一性约束避免重复数据的插入。
+
+![image-20241006200851172](./images/image-20241006200851172.png)
+
+执行一次：
+
+![image-20241006201010230](./images/image-20241006201010230.png)
+
+## 4. 股票多线程采集优化
+
+### 4.1 项目集成线程池
+
+​	目前个股或者板块的数据在批量插入时是串行执行的，显然数据IO时间成本较高，所以我们可引入多线程并发插入数据来提高操作效率，但是也会有随之而来的问题：
+
+- 当前项目是单体架构，股票数据采集线程和主业务线程共享(线程资源竞争问题)，如果股票数据采集线程长时间占用CPU，会造成主业务线程无法正常提供有效服务（线程挤压问题），这时我们可以通过线程池与主业务进行隔离；
+- 线程频繁的创建和销毁会带来非常大的性能开销，我们尽量提高线程的复用性；
+
+![image-20241006201435833](./images/image-20241006201435833.png)
+
+#### 4.1.1 配置线程池参数
+
+在stock_job工程下的application-stock.yml文件配置线程池参数：
+
+~~~yaml
+# 定时任务线程池基础参数
+task:
+  pool:
+    corePoolSize: 5 # 核心线程数
+    maxPoolSize: 20 # 设置最大线程数
+    keepAliveSeconds: 300 # 设置线程活跃时间，单位秒
+    queueCapacity: 100 # 设置队列容量
+~~~
+
+#### 4.1.2 定义参数实体bean
+
+在stock_common工程下定义线程池参数配置实体类：
+
+~~~java
+package com.async.stock.pojo.domain;
+
+import io.swagger.annotations.ApiModel;
+import io.swagger.annotations.ApiModelProperty;
+import lombok.Builder;
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+/**
+ * @author by async
+ * @Date 2024/10/06
+ * @Description
+ */
+@ConfigurationProperties(prefix = "task.pool")
+@Data
+@ApiModel("线程池实体类")
+public class TaskThreadPoolInfo {
+    /**
+     *  核心线程数（获取硬件）：线程池创建时候初始化的线程数
+     */
+    @ApiModelProperty("核心线程数")
+    private Integer corePoolSize;
+    @ApiModelProperty("最大线程数")
+    private Integer maxPoolSize;
+    @ApiModelProperty("线程活跃时间")
+    private Integer keepAliveSeconds;
+    @ApiModelProperty("阻塞队列容量")
+    private Integer queueCapacity;
+}
+~~~
+
+记得在back_end的commonConfig里添加
+
+```java
+@EnableConfigurationProperties({StockInfoConfig.class,TaskThreadPoolInfo.class})
+```
+
+#### 4.1.3 配置线程池
+
+在stock_job工程定义线程池配置bean：
+
+~~~java
+package com.async.stock.config;
+
+import com.async.stock.pojo.domain.TaskThreadPoolInfo ;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+
+/**
+ * @author by async
+ * @Date 2024/10/06
+ * @Description
+ */
+@Configuration
+@EnableConfigurationProperties(TaskThreadPoolInfo.class)
+@Slf4j
+public class TaskExecutePool {
+    private TaskThreadPoolInfo info;
+
+    public TaskExecutePool(TaskThreadPoolInfo info) {
+        this.info = info;
+    }
+
+    /**
+     * 定义任务执行器
+     * @return
+     */
+    @Bean(name = "threadPoolTaskExecutor",destroyMethod = "shutdown")
+    public ThreadPoolTaskExecutor threadPoolTaskExecutor(){
+        //构建线程池对象
+        ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
+        //核心线程数：核心线程数（获取硬件）：线程池创建时候初始化的线程数
+        taskExecutor.setCorePoolSize(info.getCorePoolSize());
+        //最大线程数：只有在缓冲队列满了之后才会申请超过核心线程数的线程
+        taskExecutor.setMaxPoolSize(info.getMaxPoolSize());
+        //缓冲队列：用来缓冲执行任务的队列
+        taskExecutor.setQueueCapacity(info.getQueueCapacity());
+        //允许线程的空闲时间：当超过了核心线程出之外的线程在空闲时间到达之后会被销毁
+        taskExecutor.setKeepAliveSeconds(info.getKeepAliveSeconds());
+        //线程名称前缀
+        taskExecutor.setThreadNamePrefix("StockThread-");
+        //设置拒绝策略
+        // taskExecutor.setRejectedExecutionHandler(rejectedExecutionHandler());
+        //参数初始化
+        taskExecutor.initialize();
+        return taskExecutor;
+    }
+
+    /**
+     * 自定义线程拒绝策略
+     * @return
+     */
+    /**
+     @Bean
+     public RejectedExecutionHandler rejectedExecutionHandler(){
+     RejectedExecutionHandler errorHandler = new RejectedExecutionHandler() {
+     @Override
+     public void rejectedExecution(Runnable runnable, ThreadPoolExecutor executor) {
+     //TODO 可自定义Runable实现类，传入参数，做到不同任务，不同处理
+     log.info("股票任务出现异常:发送邮件");
+     }
+     };
+     return errorHandler;
+     } */
+}
+~~~
+
+### 4.2 股票数据异步采集功能实现
+
+在StockTimerServiceImpl中注入线程池bean：
+
+~~~java
+    /**
+     * 注入线程池对象
+     */
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
+~~~
+
+股票数据采集异步执行：
+
+~~~java
+    /**
+     * 注入线程池对象
+     */
+    @Autowired
+    private ThreadPoolTaskExecutor threadPoolTaskExecutor;
+    /**
+     * 批量获取股票分时数据详情信息
+     * http://hq.sinajs.cn/list=sz000002,sh600015
+     */
+    @Override
+    public void getStockRtIndex() {
+        //批量获取股票ID集合
+        List<String> stockIds = stockBusinessMapper.getStockIds();
+        //计算出符合sina命名规范的股票id数据
+        stockIds = stockIds.stream().map(id -> {
+            return id.startsWith("6") ? "sh" + id : "sz" + id;
+        }).collect(Collectors.toList());
+        //设置公共请求头对象
+        //设置请求头数据
+        HttpHeaders headers = new HttpHeaders();
+        headers.add("Referer","https://finance.sina.com.cn/");
+        headers.add("User-Agent","Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/72.0.3626.121 Safari/537.36");
+        HttpEntity<String> entity = new HttpEntity<>(headers);
+        //一次性查询过多，我们将需要查询的数据先进行分片处理，每次最多查询20条股票数据
+        //此处改进，使用线程池与mq
+        //每个分片的数据开启一个线程异步执行任务
+        Lists.partition(stockIds, 20).forEach(list -> {
+            threadPoolTaskExecutor.execute(()-> {
+                //拼接股票url地址
+                String stockUrl = stockInfoConfig.getMarketUrl() + String.join(",", list);
+                //获取响应数据
+                String result = restTemplate.postForObject(stockUrl, entity, String.class);
+                List<StockRtInfo> infos = parserStockInfoUtil.parser4StockOrMarketInfo(result, ParseType.ASHARE);
+                log.info("数据量：{}", infos.size());
+                //            log.info("数据：{}",infos);
+                int count = stockRtInfoMapper.insertBatch(infos);
+                log.info("插入数据量：{}", count);
+                //通知后台终端刷新本地缓存，发送的日期数据是告知对方当前更新的股票数据所在时间点
+                rabbitTemplate.convertAndSend("stockExchange", "inner.market", new Date());
+            });
+        });    
+~~~
+
+### 4.3 板块数据异步采集实现(作业)
+
+~~~java
+    /**
+     * 获取板块实时数据
+     * http://vip.stock.finance.sina.com.cn/q/view/newSinaHy.php
+     */
+    @Override
+    public void getStockSectorRtIndex() {
+        //发送板块数据请求
+        String result = restTemplate.getForObject(stockInfoConfig.getBlockUrl(), String.class);
+        //响应结果转板块集合数据
+        List<StockBlockRtInfo> infos = parserStockInfoUtil.parse4StockBlock(result);
+        log.info("板块数据量：{}",infos.size());
+        //数据分片保存到数据库下 行业板块类目大概50个，可每小时查询一次即可
+        Lists.partition(infos,20).forEach(list->{
+            threadPoolTaskExecutor.execute(()->{
+                //20个一组，批量插入
+                stockBlockRtInfoMapper.insertBatch(list);
+            });
+        });
+    }
+~~~
+
+### 使用 Lombok 的 @Builder 与 Spring Boot 的依赖注入
+
+在现代 Java 应用开发中，Lombok 库和 Spring Boot 框架的组合被广泛使用以提高开发效率和减少样板代码。Lombok 的 `@Builder` 注解提供了一种便捷的方式来实现构建者模式，而 Spring Boot 的依赖注入则为应用的组件管理和配置提供支持。然而，在使用这两个强大的工具时，开发者可能会遇到一些兼容性问题，尤其是在构造函数注入方面。本文将探讨这些问题并提供解决方案。
+
+#### Lombok @Builder 和 Spring Boot 的兼容性问题
+
+`@Builder` 是 Lombok 提供的一个注解，用于自动生成符合构建者模式的代码。这种模式特别适用于具有多个字段的复杂对象，可以使对象的构建过程更加清晰和灵活。使用 `@Builder`，开发者不需要手动编写大量的构建逻辑。
+
+然而，当与 Spring Boot 结合时，使用 `@Builder` 注解的类可能会导致依赖注入问题。这是因为 Lombok 生成的构建者模式并没有为类生成默认的无参构造函数。Spring 的自动装配（特别是构造函数自动装配）依赖于存在可访问的构造函数。如果没有合适的构造函数，Spring 在创建 Bean 时会失败。
+
+#### 具体问题分析
+
+以一个简单的线程池配置类 `TaskThreadPoolInfo` 为例，该类使用了 `@Builder` 并希望通过 Spring 的 `@ConfigurationProperties` 来自动装载配置：
+
+```java
+import lombok.Builder;
+import lombok.Data;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+@Data
+@Builder
+@ConfigurationProperties(prefix = "task.pool")
+public class TaskThreadPoolInfo {
+    private Integer corePoolSize;
+    private Integer maxPoolSize;
+    private Integer keepAliveSeconds;
+    private Integer queueCapacity;
+}
+```
+
+在上述代码中，`TaskThreadPoolInfo` 类因为使用了 `@Builder`，所以没有生成默认的无参构造函数，导致 Spring 无法创建这个类的实例。
+
+#### 解决方案
+
+要解决这个问题，有几种方法可以确保 Lombok 和 Spring 的兼容性：
+
+1. **使用 `@NoArgsConstructor` 和 `@AllArgsConstructor`**：
+   通过同时使用 `@NoArgsConstructor` 和 `@AllArgsConstructor` 注解，Lombok 将为类生成无参构造函数和包含所有参数的构造函数。这使得 Spring 可以使用无参构造函数来实例化类，并通过属性设置进行依赖注入，或者使用所有参数的构造函数进行构造函数注入。
+
+```java
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class TaskThreadPoolInfo {
+    private Integer corePoolSize;
+    private Integer maxPoolSize;
+    private Integer keepAliveSeconds;
+    private Integer queueCapacity;
+}
+```
+
+2. **手动添加无参构造函数**：
+   如果不希望使用 Lombok 生成所有构造函数，也可以手动添加一个无参构造函数。
+
+```java
+@Data
+@Builder
+public class TaskThreadPoolInfo {
+    public TaskThreadPoolInfo() {}
+
+    private Integer corePoolSize;
+    private Integer maxPoolSize;
+    private Integer keepAliveSeconds;
+    private Integer queueCapacity;
+}
+```
+
+通过上述任一方法，可以确保类既能利用 Lombok 的 `@Builder` 功能，又能满足 Spring 的依赖注入要求。
+
+#### 结论
+
+在使用 Lombok 与 Spring Boot 结合开发时，理解它们的工作原理和相互作用是非常重要的。正确地使用 `@Builder` 与相关的构造函数注解，不仅可以保持代码的简洁性，还能确保应用的健売性和可维护性。希望本文能帮助你解决在实际开发中可能遇到的相关问题。
+
+# 十九、分库分表知识点
+
+## 分库分表介绍
+
+### 1. 分库分表概述
+
+分库分表是数据库架构的一种优化策略，主要目的是为了应对单个数据库或单表数据量过大导致的性能问题。通过将一个庞大的数据库拆分成多个较小的数据库，或将一个大表拆分为多个小表，可以有效降低单点压力，提高数据库的响应速度和处理能力。
+
+#### 核心操作：
+
+- **分库**：将一个大的数据库拆分为多个较小的数据库实例。
+- **分表**：将一个数据量庞大的表拆分为多个结构相同但数据量更小的表。
+
+#### 目的：
+
+通过分库分表，使得每个数据库实例和数据表的负载变小，从而提升整体的数据库操作性能和系统的可扩展性。
+
+### 2. 分库分表场景示例
+
+#### 场景说明
+
+老王是一家初创电商平台的开发人员，负责卖家模块的功能开发。该模块涉及到店铺、商品等相关业务。随着公司业务的快速发展，数据库中的店铺、商品等数据量迅速增加，导致数据库性能急剧下降。
+
+#### 数据库访问变慢的原因
+
+- **系统瓶颈**：关系型数据库容易成为系统的瓶颈，如单机存储容量和数据库连接数的限制。
+- **大表问题**：当单表数据量极大（如超过1000万行或100GB）时，即使进行了索引优化，复杂的多表关联查询性能仍会严重下降。
+
+### 3. 大数据存储下的数据库性能分析
+
+#### 硬件层面的优化
+
+- 提升服务器硬件能力，如增加存储容量和CPU资源，可以暂时提高数据处理能力，但成本较高且效果有限。
+
+#### 软件层面的优化
+
+- **分库**：将大量数据分散在不同的数据库中，减轻单个数据库的负载。
+- **分表**：将大表拆分成多个小表，针对性地解决单表查询性能问题。
+- **数据缓存**：缓存热点数据，减少对磁盘I/O的依赖，提升访问速度。
+
+#### 小结
+
+分库分表是面对大数据场景下，为了优化数据库性能而采取的一种策略。通过逻辑上或物理上拆分数据库和表，可以显著减轻单一节点的负载，提升系统的响应速度和处理能力。正确实施分库分表策略，需要详细分析业务需求和数据特性，以确保既能提升性能，又能保持数据管理的合理性和高效性。
+
+## 分库分表方式
+
+分库分表包括**分库**和**分表**两个部分，在生产环境中通常包括：**垂直分库、水平分库、垂直分表、水平分表**四种方式。
+
+### 1. 垂直分表
+
+#### 1.1 定义
+
+垂直分表是指在同一数据库内将一张表按照指定字段分成若干表，每张表仅存储其中一部分字段。这种方法常用于将表中不同用途的字段拆分到不同的表中，例如将频繁访问的热数据和不经常访问的冷数据分离。
+
+#### 1.2 场景示例
+
+##### 场景说明
+
+在电商平台的商品模块中，商品详情页面和商品列表页所需的信息不同。列表页通常只显示商品的名称、价格和图片，而详情页则需要显示完整的商品描述。
+
+##### 分表示例
+
+将商品信息表拆分为两部分：
+- **商品基本信息表**：存储商品名称、价格、图片等经常访问的信息。
+- **商品描述表**：存储商品详细描述等访问频次较低的信息。
+
+##### SQL 示例
+
+```sql
+-- 商品列表查询
+SELECT p.*, r.[地理区域名称], s.[店铺名称], s.[信誉]
+FROM [商品信息] p 
+LEFT JOIN [地理区域] r ON p.[产地] = r.[地理区域编码]
+LEFT JOIN [店铺信息] s ON p.id = s.[所属店铺]
+WHERE ... ORDER BY ... LIMIT ...
+
+-- 商品详情查询
+SELECT *
+FROM [商品描述] 
+WHERE [商品ID] = ?
+```
+
+##### 优势
+
+- **性能提升**：分离热数据和冷数据，减少了单个查询的数据加载量，提升查询效率。
+- **减少资源争抢**：不同类型的查询互不影响，减少了锁竞争。
+
+#### 1.3 垂直分表原则
+
+- 将不常用字段或大字段（如text、blob类型）拆分到单独的表中。
+- 将经常一起使用的字段组合在同一张表中，以减少联表查询的需要。
+
+### 2. 垂直分库
+
+#### 2.1 存在的问题
+
+尽管垂直分表能在一定程度上提升表查询性能，它仍然受限于单一服务器的资源限制，如CPU、内存和I/O等。
+
+#### 2.2 定义
+
+垂直分库是将不同业务的表分散存储到不同的数据库中，每个数据库可以部署在不同的服务器上。这种方式根据业务耦合度进行数据库的逻辑划分。
+
+#### 2.3 示例场景
+
+例如，可以将商品相关的表放在一个数据库中，将订单相关的表放在另一个数据库中。这种分布可以将业务的数据库压力分散到不同的服务器上，从而提升整体性能。
+
+##### 分库示例
+
+- **商品库**：存储商品相关的所有表。
+- **店铺库**：存储店铺相关的所有表。
+
+#### 2.4 优势
+
+- **性能提升**：降低了单个数据库的压力，分散了数据处理和存储的负载。
+- **业务隔离**：不同的业务使用不同的数据库，提高了系统的稳定性和安全性。
+
+#### 2.5 注意事项
+
+- 保持业务之间的独立性，减少跨数据库的交互和依赖。
+- 公共数据表（如地理区域表）可能需要在多个数据库中维护，或设计专门的服务来管理这类数据。
+
+### 3. 水平分表
+
+#### 3.1 定义
+
+水平分表是将一个表的数据按照某种规则（如ID范围、哈希等）分散到同一数据库的多个表中。每个表的结构相同，但存储的数据行不同。
+
+#### 3.2 示例如下
+
+对于商品信息表，可以根据商品ID的奇偶性进行分表：
+- **商品信息表1**：存储商品ID为奇数的商品信息。
+- **商品信息表2**：存储商品ID为偶数的商品信息。
+
+#### 3.3 优势
+
+- **单表数据量减少**：每个表只包含部分数据，减少了单表的大小，提升了查询和维护的效率。
+- **易于扩展**：随着数据增长，可以通过增加更多的分表来分散数据，提高数据库的可扩展性。
+
+### 4. 水平分库
+
+#### 4.1 定义
+
+水平分库是将一个表的数据按照某种规则分散到多个数据库中。这些数据库可以部署在不同的服务器上，从而分散数据存储和查询的负载。
+
+#### 4.2 示例如下
+
+将商品信息表按商品ID的奇偶性分散到两个不同的数据库：
+- **商品库1**：存储商品ID为奇数的商品信息。
+- **商品库2**：存储商品ID为偶数的商品信息。
+
+#### 4.3 优势
+
+- **突破单库限制**：解决了单个数据库大数据量的处理和存储问题，提升了系统的处理能力和稳定性。
+
+### 5. 分库分表带来的问题
+
+尽管分库分表能有效提升性能，但也引入了如分布式事务一致性、跨节点查询和排序、数据分片管理等复杂性。使用分库分表技术（如Sharding-JDBC、Mycat）可以帮助简化这些问题的处理。
+
+### 6. 分库分表小结
+
+分库分表是数据库架构优化的重要手段，它通过逻辑和物理上的数据分散，提高了数据库的处理能力和系统的可扩展性。在实施分库分表时，需要综合考虑业务的特点和数据的特性，选择合适的分库分表策略，以达到优化性能的目的。同时，也需要注意分库分表引入的复杂性和成本，合理规划和使用适当的工具来管理这些复杂性。
+
+## ShardingSphere基础概念
+
+在解释 ShardingSphere 的核心概念时，我们可以根据其官方文档来详细分析各个概念以及这些概念如何在数据库的分片策略中相互作用。这将有助于更好地理解如何在分布式数据库环境中使用 ShardingSphere 来优化性能和数据管理。
+
+### 核心概念详解
+
+1. **逻辑表（Logic Table）**
+   - 逻辑表是一个抽象的概念，代表一组具有相同结构（即，数据模式和列相同）的表的总称。这些表在物理上可能分为多个实际的表，但在应用逻辑中被视为一个单一的实体。
+   - **例子**：如果有一个用户表 `tab_user`，它根据用户ID的尾数被拆分为 `tab_user_0` 和 `tab_user_1`，那么 `tab_user` 就是这些分表的逻辑表名。
+
+2. **真实表（Actual Table）**
+   - 真实表是物理存在于数据库中的表，是逻辑表的具体物理实现。
+   - **例子**：在上述的 `tab_user` 的案例中，`tab_user_0` 和 `tab_user_1` 是真实存在的表，它们是 `tab_user` 逻辑表的分片。
+
+3. **数据节点（DataNode）**
+   - 数据节点是数据分片的最小单元，通常定义为具体数据库实例中的表。
+   - **例子**：如果 `spring-boot_0` 和 `spring-boot_1` 是两个数据源，那么 `spring-boot_0.tab_user_0` 就是一个数据节点。
+
+4. **动态表（Dynamic Table）**
+   - 动态表指的是那些不需要在分片规则中静态定义的表。这些表通常根据需要动态创建，例如基于时间或其他业务逻辑。
+   - **例子**：如果表名包含日期，如 `stock_20210401`，`stock_20210402`，则这些可以被视为动态表。
+
+5. **广播表（Broadcast Table 或公共表）**
+   - 广播表是在所有分片数据源中都完全一致存在的表，结构和数据在每个分片中都相同。
+   - **适用场景**：常用于存储公共参考信息如配置数据、字典数据等，这些数据通常体积小但需要频繁访问。
+
+6. **绑定表（Binding Table）**
+   - 绑定表是一组逻辑表，它们之间有着密切的关联，并且按照相同的分片键进行分片。这种配置允许ShardingSphere优化多表查询，避免不必要的跨分片查询，减少笛卡尔积问题。
+   - **例子**：`t_order` 和 `t_order_item` 可以是绑定表，如果它们都按 `order_no` 分片。
+
+7. **分片键（Sharding Column）**
+   - 分片键是用于确定如何将数据分布到不同的分片上的字段。可以是单一字段，也可以是多字段组合。
+   - **例子**：在订单系统中，`order_id` 可能是一个常用的分片键，因为它可以均匀分散数据并优化查询。
+
+### 总结
+ShardingSphere 通过以上概念提供了一套强大的分片策略，使得开发者可以有效管理分布式数据库的数据。使用逻辑表和真实表的概念帮助抽象和管理物理分片；数据节点提供了数据组织的最小单元；动态表和广播表提供了灵活的数据管理选项；绑定表和分片键则是优化查询和数据分布的关键。通过合理应用这些概念，可以显著提高大规模应用的性能和数据一致性。
+
+
+
+## 分片键（Sharding Key）
+
+分片键（Sharding Key）是数据库分片架构中的一个核心概念，用于确定数据在分布式数据库系统中如何分布或者分片。分片本质上是将数据分散存储在多个服务器或数据节点上的一种方法，旨在提高数据库的可扩展性和性能。分片键是用来决定特定数据行应该存储在哪个分片上的字段或字段组合。
+
+### 分片键的作用
+1. **数据分布**：分片键决定数据如何在多个分片（服务器或数据节点）之间进行分布。通常，基于分片键的值通过一定的算法（如哈希、范围或列表）来计算得出数据应该存储在哪个具体的分片上。
+   
+2. **查询优化**：正确的分片键选择可以显著优化查询性能，因为它允许系统直接定位到包含所需数据的分片，避免了跨节点的全局查询。
+
+3. **负载均衡**：合理的分片键可以帮助数据库系统均衡地分配数据和查询负载，避免某个分片过载而其他分片闲置的情况。
+
+4. **可扩展性**：随着数据量的增长，分片使得数据库能够通过增加更多的节点来扩展存储容量和处理能力，而不是仅仅依赖于单一服务器的扩展，这有助于处理更高的数据量和并发请求。
+
+### 分片键的选择
+选择合适的分片键是分片策略中非常关键的一步，需要考虑以下因素：
+
+- **高访问性能**：分片键应该是查询中经常使用的键，以便查询可以直接路由到正确的分片，减少不必要的跨节点通信。
+- **均匀的数据分布**：理想的分片键应该能够将数据均匀分布到所有分片中，避免数据倾斜问题，即某些分片数据量过大而其他分片较少。
+- **业务相关性**：分片键通常选择与业务逻辑紧密相关的字段，如用户ID、地区代码等，这样可以更好地根据业务需求进行数据管理和优化。
+
+### 常见的分片方法
+1. **哈希分片**：通过对分片键的值应用哈希函数来分配数据。这种方法可以确保数据的均匀分布，但可能不容易直接定位特定范围的数据。
+2. **范围分片**：数据根据分片键的值落在预定义的范围内来分配到不同的分片。这适合于需要频繁进行范围查询的场景。
+3. **列表分片**：数据根据分片键的值与预定义列表匹配来分配到特定的分片，常用于地理位置或固定分类的数据分布。
+
+总之，分片键的选择和设计对于分布式数据库的性能、可扩展性和维护来说至关重要，应根据具体的应用场景和业务需求来进行精心规划和实施。
+
+
+
+## 绑定表
+
+了解到我之前的解释可能还没有完全满足你的需求，这次我会尝试更详细地解释绑定表的概念，特别是它在数据库查询中的实际应用和优化效果。
+
+### 绑定表（Binding Tables）详细解释
+
+在分布式数据库中，尤其是使用分片技术的环境中，数据被分割并分布在多个服务器或节点上以提高可扩展性和处理能力。绑定表是一种特定的数据库配置，允许数据库管理系统(DBMS)对于使用相同分片键的多个表进行智能管理，确保这些表的数据按照相同的方式分片并存储在相同的物理节点上。这样，相关联的表在执行连接操作时能够局限在单一节点上进行，从而显著提高查询效率和性能。
+
+### 工作机制
+
+在没有绑定表配置的情况下，即使两个表使用相同的分片键，系统在进行查询操作时可能仍会在所有的数据节点中查找数据，因为系统无法预知这些数据是否在同一节点上。这种方式可能会导致大量的跨节点通信和数据处理，尤其是在执行涉及多表连接的复杂查询时。
+
+绑定表通过确保相关表的数据物理上存储在同一个节点上，允许查询优化器优化查询计划，直接在包含相关数据的节点上执行查询，避免了不必要的跨节点数据处理和网络延迟。
+
+### 示例：如何解决问题
+
+考虑以下两个表：
+
+- `t_order`：存储订单信息。
+- `t_order_item`：存储订单的条目信息。
+
+假设这两个表都根据 `order_id` 进行分片。
+
+#### 未配置绑定表时的行为
+
+- 假设数据库有三个节点：Node 1, Node 2, 和 Node 3。
+- 订单ID为 10 的`order`和`order_item`由于没有绑定配置，可能分别位于不同的节点，即便它们使用了相同的分片键。
+- 执行查询时（例如：获取订单ID为 10 的所有订单和订单项），数据库需要在所有节点上执行查询，以确保找到所有相关数据，导致高网络I/O和延迟。
+
+#### 配置绑定表后的行为
+
+- 当`t_order`和`t_order_item`配置为绑定表后，系统知道所有相同`order_id`的订单和订单项都位于同一节点。
+- 这样，查询订单ID为 10 的所有订单和订单项时，数据库只在一个节点（例如：Node 1）上查找数据。
+- 这种配置消除了不必要的跨节点查询，减少了查询时间和资源消耗。
+
+### 实际应用的好处
+
+1. **性能提升**：减少了跨节点的数据传输，加快了查询速度。
+2. **资源优化**：减轻了网络负载和服务器处理负担，使得资源得到更合理的利用。
+3. **查询简化**：简化了查询逻辑，因为查询优化器可以确定数据的物理位置，优化查询路径。
+
+### 总结
+
+绑定表是一种高效的分片策略，通过确保相关表在同一节点上，显著提升了分布式数据库系统中多表查询的效率。这对于数据量大、需要高性能的应用环境尤为重要，能够确保系统在扩展时保持高效和响应迅速。
+
+## Sharding-JDBC 执行原理详解
+
+Sharding-JDBC 是一种客户端的数据库中间件，用于支持应用程序透明地实现数据库的分库分表功能，主要用于提升大规模数据处理的性能。下面详细解释其执行原理，以及如何处理一个典型的 SQL 查询过程。
+
+Sharding-JDBC 的工作流程涉及多个核心步骤：**SQL解析**、**执行器优化**、**SQL路由**、**SQL改写**、**SQL执行**和**结果归并**。这些步骤确保 SQL 语句能够正确地分发到适当的数据库和表上执行，并将结果有效地汇总回用户。
+
+<img src="./images/image-20241004160424974.png" alt="image-20241004160424974" style="zoom:50%;" />
+
+### 1. SQL 解析
+在这个阶段，Sharding-JDBC 解析客户端提交的 SQL 语句，识别其中的关键组件，如表名、条件、操作类型（SELECT、UPDATE、INSERT等）。解析的过程中会确定哪些表是逻辑表以及它们对应的物理表。
+
+例如，查询：
+```sql
+select * from t_user where id=10
+```
+在这里，`t_user` 是逻辑表名，`id` 是分片键。
+
+### 2. 执行器优化
+执行器优化阶段主要进行查询条件的优化，比如将多个 OR 条件合并为一个 IN 条件，从而减少需要执行的查询数量，提高查询效率。
+
+例如，优化前：
+```sql
+select * from t_user where id=1 or id=2 or id=3
+```
+优化后：
+```sql
+select * from t_user where id in (1, 2, 3)
+```
+
+### 3. SQL 路由
+根据分片算法和分片键的值，SQL 路由决定具体的 SQL 语句将在哪些物理数据库和表上执行。这个过程称为路由。
+
+根据示例中的设置，`id` 的值为 10，如果分片算法是按照 `id % 2` 来分配的，那么：
+- 如果 `id = 10`，根据 `10 % 2 = 0`，应该路由到 `ds0.t_user_0` 和 `ds1.t_user_0`。
+
+### 4. SQL 改写
+在确定了目标数据库和表之后，原始 SQL 需要改写为可以直接在目标数据库上执行的 SQL。这包括修改逻辑表名为实际的物理表名，并且可能包括一些优化改写。
+
+改写后的 SQL 语句可能如下：
+```sql
+select * from ds0.t_user_0 where id=10;
+select * from ds1.t_user_0 where id=10;
+```
+
+### 5. SQL 执行
+改写后的 SQL 通过数据库连接池发送到相应的数据库实例执行。Sharding-JDBC 可以并行地在多个数据库实例上执行这些 SQL，提高执行效率。
+
+### 6. 结果归并
+最后，从不同数据库实例返回的结果需要在客户端进行归并处理，以保证返回给应用程序的是一个统一格式的结果集。这包括合并数据行、处理聚合函数等复杂操作。
+
+归并方式可能包括：
+- **流式归并**：逐行处理返回的数据，适用于大数据量的处理。
+- **内存归并**：将所有结果集加载到内存中，进行全面计算和排序。
+- **追加归并**：对于部分可以追加的结果集，如分页查询，进行顺序追加。
+
+### 总结
+Sharding-JDBC 的执行原理允许应用在不修改代码的情况下支持复杂的分库分表操作，同时保持了高性能的数据处理能力。通过这种客户端分片机制，应用可以在不依赖中心化数据库中间件的情况下，实现数据库水平扩展的需求。
+
+## Sharding-JDBC分片策略
+
+### 1. Inline模式
+
+#### 概述
+Inline模式使用Groovy表达式来定义简单的分片规则，它允许开发者快速设定如何基于一个分片键将数据路由到指定的数据库或表中。
+
+#### 示例解析
+考虑一个电商系统，你有两个数据库实例（`db0`和`db1`），每个数据库里有两张订单表（`t_order0`和`t_order1`）。你希望根据订单ID的奇偶性将数据分布到这些表中。
+
+- **Groovy表达式**：`"t_order${orderId % 2}"`，这表示根据订单ID除以2的余数来决定使用`t_order0`还是`t_order1`。
+- **数据库表达式**：`"db${orderId % 2}"`，这表示根据订单ID除以2的余数来决定使用`db0`还是`db1`。
+
+配置示例：
+
+```yaml
+sharding:
+  tables:
+    t_order:
+      actualDataNodes: db${0..1}.t_order${0..1}
+      tableStrategy:
+        inline:
+          shardingColumn: orderId
+          algorithmExpression: db${orderId % 2}.t_order${orderId % 2}
+```
+
+这里，`actualDataNodes`定义了物理节点，`t_order`的数据将根据订单ID分布在`db0.t_order0`、`db0.t_order1`、`db1.t_order0`、`db1.t_order1`。
+
+### 2. Standard模式
+
+#### 概述
+Standard模式允许通过自定义的分片算法来处理更复杂的分片逻辑，通常用于处理非常规的分片需求。
+
+#### 示例解析
+假设你想根据订单金额来分片，订单金额低于100的存储在`low_order`表，高于等于100的存储在`high_order`表。
+
+首先，你需要实现一个自定义的分片算法类：
+
+```java
+public class OrderShardingAlgorithm implements PreciseShardingAlgorithm<Long> {
+    @Override
+    public String doSharding(Collection<String> availableTargetNames, PreciseShardingValue<Long> shardingValue) {
+        if (shardingValue.getValue() < 100) {
+            return "low_order";
+        } else {
+            return "high_order";
+        }
+    }
+}
+```
+
+配置示例：
+
+```yaml
+sharding:
+  tables:
+    t_order:
+      actualDataNodes: ds.t_order${0..1}
+      tableStrategy:
+        standard:
+          shardingColumn: orderAmount
+          preciseAlgorithmClassName: com.example.OrderShardingAlgorithm
+```
+
+这里，`t_order`的数据将根据订单金额被路由到`low_order`或`high_order`。
+
+### 3. Complex模式
+
+#### 概述
+Complex模式用于处理多个分片键的情况，允许通过复合条件来分片。
+
+#### 示例解析
+假设根据订单ID和用户ID来共同决定数据的路由。
+
+你需要实现一个复合分片算法类：
+
+```java
+public class MyComplexShardingAlgorithm implements ComplexKeysShardingAlgorithm<Long> {
+    @Override
+    public Collection<String> doSharding(Collection<String> availableTargetNames, Collection<ShardingValue<Long>> shardingValues) {
+        // 实现根据订单ID和用户ID的组合逻辑来决定数据路由
+    }
+}
+```
+
+配置示例：
+
+```yaml
+sharding:
+  tables:
+    t_order:
+      actualDataNodes: ds${0..1}.t_order${0..1}
+      tableStrategy:
+        complex:
+          shardingColumns: orderId, userId
+          algorithmClassName: com.example.MyComplexShardingAlgorithm
+```
+
+### 4. Hint模式
+
+#### 概述
+Hint模式是一种通过代码动态指定分片键和分片值的方式，适用于分片键不在SQL中或需要动态改变路由逻辑的场景。
+
+#### 使用方法
+通过编程方式在运行时指定分片键和分片值：
+
+```java
+try (HintManager hintManager = HintManager.getInstance()) {
+    hintManager.addTableShardingValue("t_order", "orderId", 1001);
+    // 此时所有对t_order的查询都将被路由到包含orderId为1001的分片上
+}
+```
+
+这种方式非常灵活，适用于复杂或不规则的分片场景，如根据业务操作动态决定数据的分布。
+
+### 总结
+Sharding-JDBC通过这四种分片策略提供了从简单到复杂的多级别分片控制，适应了从单一分片键到多分片键，再到完全由应用控制的灵活分片需求，极大地扩展了数据库分片的应用场景和效能。
+
+## 基于inline模式实现水平分表
+
+接下来，我将提供一个详细的分步指南，确保Sharding-JDBC项目的水平分表从头到尾完整无缺的设置过程。
+
+### 详细步骤：
+
+#### 1. 设置数据库环境
+
+**1.1 创建数据库和表**
+
+首先，需要在MySQL数据库中创建所需的数据库和表。这些表将存储订单数据，按照订单ID分配到不同的表中。
+
+```sql
+-- 创建数据库
+CREATE DATABASE IF NOT EXISTS `order_db_1` CHARACTER SET 'utf8' COLLATE 'utf8_general_ci';
+
+-- 创建第一个订单表
+USE order_db_1;
+DROP TABLE IF EXISTS `t_order_1`;
+CREATE TABLE `t_order_1` (
+    `order_id` BIGINT(20) NOT NULL COMMENT '订单id',
+    `price` DECIMAL(10, 2) NOT NULL COMMENT '订单价格',
+    `user_id` BIGINT(20) NOT NULL COMMENT '下单用户id',
+    `status` VARCHAR(50) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '订单状态',
+    PRIMARY KEY (`order_id`)
+) ENGINE=INNODB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+
+-- 创建第二个订单表
+DROP TABLE IF EXISTS `t_order_2`;
+CREATE TABLE `t_order_2` (
+    `order_id` BIGINT(20) NOT NULL COMMENT '订单id',
+    `price` DECIMAL(10, 2) NOT NULL COMMENT '订单价格',
+    `user_id` BIGINT(20) NOT NULL COMMENT '下单用户id',
+    `status` VARCHAR(50) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '订单状态',
+    PRIMARY KEY (`order_id`)
+) ENGINE=INNODB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+```
+
+#### 2. 配置Spring Boot项目
+
+**2.1 添加Sharding-JDBC依赖**
+
+在Spring Boot项目的`pom.xml`中添加必要的依赖：
+
+```xml
+<dependencies>
+    <!-- Spring Boot Starter Parent -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+    <!-- MyBatis Spring Boot Starter -->
+    <dependency>
+        <groupId>org.mybatis.spring.boot</groupId>
+        <artifactId>mybatis-spring-boot-starter</artifactId>
+        <version>2.1.4</version>
+    </dependency>
+    <!-- Sharding-JDBC Spring Boot Starter -->
+    <dependency>
+        <groupId>org.apache.shardingsphere</groupId>
+        <artifactId>sharding-jdbc-spring-boot-starter</artifactId>
+        <version>4.0.0-RC1</version>
+    </dependency>
+    <!-- MySQL Driver -->
+    <dependency>
+        <groupId>mysql</groupId>
+        <artifactId>mysql-connector-java</artifactId>
+        <scope>runtime</scope>
+    </dependency>
+    <!-- Alibaba Druid -->
+    <dependency>
+        <groupId>com.alibaba</groupId>
+        <artifactId>druid</artifactId>
+        <version>1.2.8</version>
+    </dependency>
+</dependencies>
+```
+
+**2.2 配置Sharding-JDBC**
+
+在`resources`目录下创建或修改`application.yml`文件，添加数据库和Sharding-JDBC的配置：
+
+```yaml
+spring:
+  application:
+    name: sharding_all  # 应用名称
+
+  profiles:
+    active: test1  # 激活的配置文件
+
+  # MyBatis配置
+  mybatis:
+    mapper-locations: classpath:mappers/*.xml  # 指定Mybatis的Mapper文件位置
+    type-aliases-package: com.sharding.inline.pojo  # 指定Mybatis的实体目录
+
+  # 数据源及Sharding-JDBC配置
+  shardingsphere:
+    datasource:
+      names: ds1  # 数据源名称列表
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://localhost:3306/order_db_1?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+
+    sharding:
+      tables:
+        t_order:
+          actual-data-nodes: ds1.t_order_$->{1..2}  # 定义实际数据节点
+          table-strategy:
+            inline:
+              sharding-column: order_id  # 定义分片键
+              algorithm-expression: t_order_$->{order_id % 2 + 1}  # 定义分片算法表达式
+
+    default-database-strategy:
+      inline:
+        sharding-column: order_id
+        algorithm-expression: order_db_1
+
+```
+
+#### 3. 实现数据访问层
+
+**3.1 创建实体类**
+
+在`com.example.demo.pojo`包中创建`Order`实体类：
+
+```java
+package com.example.demo.pojo;
+
+public class Order {
+    private Long orderId;
+    private Double price;
+    private Long userId;
+    private String status;
+
+    // Getters and Setters
+}
+```
+
+**3.2 创建Mapper接口和XML**
+
+在`com.example.demo.mapper`包中创建`OrderMapper`接口：
+
+```java
+package com.example.demo.mapper;
+
+import com.example.demo.pojo.Order;
+import org.apache
+
+.ibatis.annotations.Mapper;
+
+@Mapper
+public interface OrderMapper {
+    int insert(Order order);
+    Order selectById(Long orderId);
+}
+```
+
+创建对应的MyBatis Mapper XML文件`OrderMapper.xml`：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.demo.mapper.OrderMapper">
+    <insert id="insert" parameterType="com.example.demo.pojo.Order">
+        insert into t_order (order_id, user_id, price, status) values (#{orderId}, #{userId}, #{price}, #{status})
+    </insert>
+    <select id="selectById" parameterType="long" resultType="com.example.demo.pojo.Order">
+        select * from t_order where order_id = #{orderId}
+    </select>
+</mapper>
+```
+
+#### 4. 运行和测试
+
+现在，你可以编写一个测试类或者直接运行应用来插入和查询数据，验证数据是否根据`order_id`的奇偶性被正确分配到`t_order_1`或`t_order_2`。
+
+```java
+@SpringBootTest
+public class ShardingJdbcApplicationTests {
+
+    @Autowired
+    private OrderMapper orderMapper;
+
+    @Test
+    public void testInsert() {
+        for (int i = 1; i <= 10; i++) {
+            Order order = new Order();
+            order.setOrderId((long) i);
+            order.setUserId((long) (i * 10));
+            order.setPrice(100.0 * i);
+            order.setStatus("NEW");
+            orderMapper.insert(order);
+        }
+    }
+
+    @Test
+    public void testSelect() {
+        Order order = orderMapper.selectById(1L);
+        System.out.println(order);
+    }
+}
+```
+
+这个详细的步骤指南应该帮助你完整地设置和运行一个使用Sharding-JDBC进行水平分表的应用，提高了理解和操作的明确性。
+
+## 基于inline模式实现水平分库分表
+
+当然，让我们更系统地整合和详细讲解基于inline模式实现水平分库分表的完整过程，包括数据库准备、Sharding配置、和测试，以确保配置的有效性和正确理解。
+
+### 1 数据库准备
+
+为了支持水平分库分表，我们将设置两个数据库，每个数据库包含两张表。这样的配置可以帮助我们在实际应用中实现数据的负载均衡和高可用性。
+
+#### 创建数据库和表的SQL脚本
+
+以下是为两个数据库`order_db_1`和`order_db_2`创建相应表的SQL脚本：
+
+```sql
+-- 创建第二个数据库 order_db_2
+CREATE DATABASE IF NOT EXISTS `order_db_2` CHARACTER SET 'utf8' COLLATE 'utf8_general_ci';
+
+USE order_db_2;
+-- 创建表 t_order_1
+DROP TABLE IF EXISTS `t_order_1`;
+CREATE TABLE `t_order_1` (
+    `order_id` BIGINT(20) NOT NULL COMMENT '订单id',
+    `price` DECIMAL(10, 2) NOT NULL COMMENT '订单价格',
+    `user_id` BIGINT(20) NOT NULL COMMENT '下单用户id',
+    `status` VARCHAR(50) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '订单状态',
+    PRIMARY KEY (`order_id`)
+) ENGINE=INNODB CHARACTER SET=utf8 COLLATE=utf8_general_ci;
+
+-- 创建表 t_order_2
+DROP TABLE IF EXISTS `t_order_2`;
+CREATE TABLE `t_order_2` (
+    `order_id` BIGINT(20) NOT NULL COMMENT '订单id',
+    `price` DECIMAL(10, 2) NOT NULL COMMENT '订单价格',
+    `user_id` BIGINT(20) NOT NULL COMMENT '下单用户id',
+    `status` VARCHAR(50) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '订单状态',
+    PRIMARY KEY (`order_id`)
+) ENGINE=INNODB CHARACTER SET=utf8 COLLATE=utf8_general_ci;
+```
+
+### 2 Sharding配置
+
+接下来，我们配置Sharding-JDBC，确保正确地将数据根据分片键分散到不同的数据库和表中。
+
+#### 主配置文件 (`application.yml`)
+
+使用YAML格式的配置文件提高配置的可读性，并简化配置的管理。以下是基于inline模式的分库分表配置：
+
+```yaml
+spring:
+  application:
+    name: sharding_all
+
+  profiles:
+    active: test2
+
+  shardingsphere:
+    datasource:
+      names: ds1, ds2
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource
+        url: jdbc:mysql://192.168.188.130:3306/order_db_1?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+      ds2:
+        type: com.alibaba.druid.pool.DruidDataSource
+        url: jdbc:mysql://192.168.188.130:3306/order_db_2?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+
+    sharding:
+      tables:
+        t_order:
+          actual-data-nodes: ds$->{1..2}.t_order_$->{1..2}
+          database-strategy:
+            inline:
+              sharding-column: user_id
+              algorithm-expression: ds$->{user_id % 2 + 1}
+          table-strategy:
+            inline:
+              sharding-column: order_id
+              algorithm-expression: t_order_$->{order_id % 2 + 1}
+```
+
+### 3 测试
+
+我们需要确保数据正确地根据用户ID和订单ID被分配到相应的数据库和表中。
+
+#### 测试用例 (`ShardingJdbcApplicationTests.java`)
+
+```java
+@SpringBootTest
+public class ShardingJdbcApplicationTests {
+
+    @Autowired
+    private OrderMapper orderMapper;
+
+    @Test
+    public void testOrderInsert() {
+        int orderId = 0;
+        int userId = 0;
+        Random random = new Random();
+        for (int i = 0; i < 40; i++) {
+            orderId += random.nextInt(2) + 1;
+            userId += random.nextInt(2) + 1;
+            Order order = new Order();
+            order.setOrderId((long) orderId);
+           
+
+ order.setUserId((long) userId);
+            order.setPrice(new BigDecimal("100"));
+            order.setStatus("NEW");
+            orderMapper.insert(order);
+        }
+    }
+}
+```
+
+这个测试方法模拟了40次订单插入操作，依据`userId`的奇偶性将数据分布到两个数据库的两张表中。通过观察数据在数据库中的分布，我们可以验证分片规则是否按预期工作。
+
+通过上述步骤的配置和测试，你可以有效地实现和验证Sharding-JDBC的水平分库分表功能，以提高大规模数据环境下的数据库操作效率和响应速度。
+
+## 广播表
+
+广播表是Sharding-JDBC中一个非常有用的功能，尤其在处理需要在每个分库中保持一致性的数据时。广播表通常用于存储小但查询频繁的数据，如配置信息、字典表等。这类表在所有分库中都有一份相同的副本，并且任何对这些表的修改都会同步到所有的数据库实例中。
+
+### 1 广播表介绍
+
+广播表的核心特性如下：
+
+- **数据一致性**：广播表在所有分库中都保存有相同的数据副本，这对于保持数据的全局一致性非常有帮助。
+- **操作简化**：对广播表的任何更新（如插入、更新和删除）都会自动在所有分库上执行，无需手动同步。
+- **查询优化**：在执行联合查询时，广播表可以直接与任何分片表联合，而无需担心数据源的问题。
+
+#### 广播表的应用场景示例
+
+在数据库`order_db_1`和`order_db_2`中创建`t_dict`字典表，这种表通常用于存储静态参考数据，例如货币类型、国家代码等。
+
+### 2 广播表配置
+
+配置广播表需要在Sharding-JDBC的配置文件中明确指定哪些表是广播表。以下是YAML格式的配置示例，用于定义`t_dict`为广播表：
+
+```yaml
+spring:
+  shardingsphere:
+    sharding:
+      broadcast-tables:
+        - t_dict  # 定义广播表
+
+    datasource:
+      names: ds1, ds2  # 数据源列表
+      ds1:
+        url: jdbc:mysql://localhost:3306/order_db_1
+        username: root
+        password: secret
+        driver-class-name: com.mysql.cj.jdbc.Driver
+      ds2:
+        url: jdbc:mysql://localhost:3306/order_db_2
+        username: root
+        password: secret
+        driver-class-name: com.mysql.cj.jdbc.Driver
+```
+
+### 3 测试广播表
+
+为了验证广播表的功能，可以通过插入一些数据到`t_dict`表并检查是否所有数据库都有相同的数据。以下是测试广播表功能的JUnit测试示例。
+
+首先，确保你有一个对应的Mapper接口和方法来插入和查询数据。
+
+#### TDictMapper 接口
+
+```java
+package com.example.demo.mapper;
+
+import com.example.demo.pojo.TDict;
+import org.apache.ibatis.annotations.Mapper;
+
+@Mapper
+public interface TDictMapper {
+    int insert(TDict dict);
+}
+```
+
+#### 测试用例
+
+```java
+@SpringBootTest
+public class ShardingJdbcApplicationTests {
+
+    @Autowired
+    private TDictMapper tDictMapper;
+
+    @Test
+    public void testBroadcastTable() {
+        TDict dict = new TDict();
+        dict.setDictId(1L);
+        dict.setType("1");
+        dict.setCode("666");
+        dict.setValue("888");
+        tDictMapper.insert(dict);
+    }
+}
+```
+
+这个测试将插入一个新的字典项到`t_dict`表，并由于广播表的设置，这条记录应该会出现在所有配置的数据库实例中。
+
+通过这样的配置和测试，你可以确保广播表在所有分库中同步更新，这对于维护静态数据一致性和减轻数据库查询负担非常有益。
+
+
+
+## 垂直分库
+
+在Sharding-JDBC中实现垂直分库是管理大数据集、优化数据库查询性能的有效策略之一。它允许将不同的表存储在不同的数据库中，以此来分散单个数据库的负载压力。下面是如何配置和测试垂直分库环境的详细指南。
+
+### 1 数据库准备
+
+垂直分库通常用于将业务逻辑相关的表分布到专用的数据库中。在本例中，我们将用户信息表`t_user`单独放置在`user_db`数据库中，与订单相关的表则放在`order_db_1`和`order_db_2`中。
+
+#### 创建用户信息表的SQL脚本：
+
+```sql
+CREATE DATABASE IF NOT EXISTS `user_db` CHARACTER SET 'utf8' COLLATE 'utf8_general_ci';
+
+USE user_db;
+DROP TABLE IF EXISTS `t_user`;
+CREATE TABLE `t_user` (
+ `user_id` BIGINT(20) NOT NULL COMMENT '用户id',
+ `fullname` VARCHAR(255) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL COMMENT '用户姓名',
+ `user_type` CHAR(1) DEFAULT NULL COMMENT '用户类型',
+ PRIMARY KEY (`user_id`) USING BTREE
+) ENGINE=INNODB CHARACTER SET=utf8 COLLATE=utf8_general_ci ROW_FORMAT=Dynamic;
+```
+
+### 2 配置
+
+为实现垂直分库，你需要在Sharding-JDBC的配置文件中明确指定各个数据库的连接信息，并配置相关的分库策略。我们将使用YAML格式来实现这些配置，以便更清晰地管理和查看。
+
+#### 添加新的数据源和分库配置
+
+```yaml
+spring:
+  shardingsphere:
+    datasource:
+      names: ds1, ds2, ds3
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource
+        url: jdbc:mysql://192.168.188.130:3306/order_db_1?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+      ds2:
+        type: com.alibaba.druid.pool.DruidDataSource
+        url: jdbc:mysql://192.168.188.130:3306/order_db_2?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+      ds3:
+        type: com.alibaba.druid.pool.DruidDataSource
+        url: jdbc:mysql://192.168.188.130:3306/user_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+
+    sharding:
+      tables:
+        t_user:
+          actual-data-nodes: ds3.t_user
+          table-strategy:
+            inline:
+              sharding-column: user_id
+              algorithm-expression: t_user
+```
+
+这个配置段落确保了`user_db`数据库中的`t_user`表作为一个单独的实体存在，不参与其他数据库中的任何分片策略。
+
+### 3 测试
+
+为了验证垂直分库配置的正确性，我们需要在Java应用程序中测试数据的插入和查询操作。
+
+#### 示例Java测试代码：
+
+```java
+@SpringBootTest
+public class ShardingJdbcApplicationTests {
+
+    @Autowired
+    private TUserMapper tUserMapper;
+
+    @Test
+    public void testInsertUser() {
+        TUser user = TUser.builder()
+                .userId(133L)
+                .userType("1")
+                .fullname("laozhang")
+                .build();
+        tUserMapper.insert(user);
+    }
+}
+```
+
+这段测试代码尝试在`user_db`数据库的`t_user`表中插入一条新的记录。通过检查数据库中的数据，可以验证垂直分库策略是否按预期工作。
+
+通过上述步骤，你可以在Sharding-JDBC中实现垂直分库，从而优化数据管理和查询性能。这种配置方式提供了更好的数据隔离和可扩展性，尤其适用于业务逻辑复杂且数据量大的应用场景。
+
+
+
+确实，让我们详细讲解这部分垂直分库配置中的Sharding-JDBC设置，特别是关于表策略和分片配置。
+
+### Sharding配置解析
+
+在这个例子中，配置主要针对`user_db`数据库中的`t_user`表进行。垂直分库意味着某些表单独存放在一个数据库中，不与其他数据库共享数据。这种方式通常用于业务解耦或提升性能。
+
+#### `actual-data-nodes` 配置
+
+```yaml
+actual-data-nodes: ds3.t_user
+```
+
+- **`actual-data-nodes`**：这个配置指定了表的实际数据节点。在这个例子中，它指定了`ds3`数据源中的`t_user`表。`ds3`是在之前配置的数据源列表中定义的，代表一个特定的数据库实例（`user_db`）。
+- 在垂直分库的场景中，通常只有一个节点包含该表，因为表完全位于一个数据库中。
+
+#### `table-strategy` 配置
+
+```yaml
+table-strategy:
+  inline:
+    sharding-column: user_id
+    algorithm-expression: t_user
+```
+
+- **`table-strategy`**：定义了表的分片策略。即便在垂直分库的场景中表可能不会进行分片，这个配置还是必需的，因为Sharding-JDBC要求每个表都需要配置分片策略。
+- **`inline`**：表示使用内联表达式来进行分片。内联表达式支持简单的Groovy语法，可以直接在配置文件中编写。
+- **`sharding-column`**：指定用于分片的列。在这里，即使`user_id`并未真正用于跨多个数据节点的分片，我们仍然需要声明一个分片列，以满足Sharding-JDBC的配置要求。
+- **`algorithm-expression`**：分片算法表达式，定义了基于分片列的计算表达式。在这里，表达式`"t_user"`简单地返回表名，因为没有实际的分片操作发生。这种设置实际上是告诉Sharding-JDBC，不管`user_id`的值如何，总是访问`ds3`数据源中的`t_user`表。
+
+#### 配置的作用
+
+这样配置后，所有对`t_user`表的操作都会直接路由到`ds3`数据源的`user_db`数据库，而无需进行任何分片计算。这确保了所有对该表的操作都局限于单一的数据库实例，从而实现业务逻辑的解耦和性能的优化。
+
+虽然看似多此一举，但在Sharding-JDBC中，即使是单表也需要通过配置表明其策略，以确保框架可以正确处理所有表操作。这种方法提供了一种系统和一致的方式来处理所有数据库表的访问和操作，即使某些表并不需要分片。
+
+## 默认数据源模式
+
+### 1 数据库准备
+
+首先，我们需要创建数据库和表，以用于测试默认数据源模式。
+
+#### 创建数据库和表的SQL脚本：
+
+```sql
+CREATE DATABASE IF NOT EXISTS `default_db` CHARACTER SET 'utf8';
+USE `default_db`;
+
+CREATE TABLE `tb_log` (
+    `id` BIGINT PRIMARY KEY,
+    `info` VARCHAR(30)
+);
+```
+
+### 2 相关配置
+
+在Spring Boot项目的`application.yml`中，我们将配置数据源，并指定一个默认数据源，这样不需要分片的表就可以通过它进行操作。
+
+#### 使用YAML格式的配置示例：
+
+```yaml
+spring:
+  shardingsphere:
+    datasource:
+      names: ds1,ds2,ds3,ds4  # 定义所有数据源名称
+
+      ds4:  # 配置作为默认数据源的ds4
+        type: com.alibaba.druid.pool.DruidDataSource
+        driver-class-name: com.mysql.cj.jdbc.Driver
+        url: jdbc:mysql://192.168.200.130:3306/default_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        username: root
+        password: root
+
+    sharding:
+      default-data-source-name: ds4  # 指定默认数据源
+```
+
+这里，`ds4`是连接到`default_db`数据库的数据源，并被配置为默认数据源。任何不涉及分片策略的表操作都将通过此数据源处理。
+
+### 3 测试
+
+为了验证默认数据源是否按预期工作，我们可以通过一个简单的JUnit测试来插入数据到`tb_log`表。
+
+#### 示例Java测试代码：
+
+```java
+@SpringBootTest
+public class ShardingJdbcApplicationTests {
+
+    @Autowired
+    private TbLogMapper tbLogMapper;
+
+    /**
+     * 测试默认数据源
+     * 对于没有做分片处理的操作，则会直接访问默认数据源处理
+     */
+    @Test
+    public void testDefaultDataSource() {
+        TbLog log = TbLog.builder().id(1L).info("这是一个测试").build();
+        tbLogMapper.insert(log);
+    }
+}
+```
+
+### inline模式小结
+
+在YAML配置的帮助下，我们可以非常清晰地看到数据源配置和分片策略的布局，这有助于快速理解和维护系统配置。此外，inline模式虽然在处理简单分片需求时效果良好，但在面对更复杂的分片策略或需求时，可能需要考虑更灵活的配置或技术方案。
+
+通过这种方式配置默认数据源，你可以更灵活地处理那些不需要分片的表，同时保持其他表的分片逻辑不变，这对于混合类型的数据库设计非常有益。
+
+## Standard模式实现分库分表
+
+### 1 标准模式分片API介绍
+
+```yaml
+# 用于单分片键的标准分片场景
+spring:
+  shardingsphere:
+    sharding:
+      tables:
+        my_table:  # 替换为你的逻辑表名
+          database-strategy:
+            standard:
+              sharding-column: user_id  # 分片列名称，例如 user_id
+              precise-algorithm-class-name: com.yourpackage.MyPreciseShardingAlgorithm  # 替换为你的精确分片算法实现类的全路径
+              range-algorithm-class-name: com.yourpackage.MyRangeShardingAlgorithm  # 替换为你的范围分片算法实现类的全路径，可选
+
+```
+
+> 参考：
+>
+> https://shardingsphere.apache.org/document/current/cn/reference/api-change-history/shardingsphere-jdbc/spring-boot-starter/#shardingsphere-4x
+
+通过阅读官方API，我们发现基于标准模式实现分库分表，需要分别为库和表定义精准查询和范围查询实现：
+
+![image-20241004171328531](./images/image-20241004171328531.png)
+
+```properties
+PreciseShardingAlgorithm ：精准查询库或者表（sql使用使用了= 、in）
+RangeShardingAlgorithm ：范围查询库或者表 （between and 、 > 、 <）
+所以，使用sharding-jdbc时尽量让分片键去查询，且遵循使用规范；
+```
+
+### 标准分片模式实现
+
+分库分表场景：
+
+order_db_1
+  ├── t_order_1
+  └── t_order_2
+order_db_2
+  ├── t_order_1
+  └── t_order_2  
+
+### 1 定义标准分库策略
+
+精准查询库实现：
+
+```java
+package com.itheima.algorithm;
+
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingValue;
+
+import java.util.Collection;
+
+/**
+ * @author by async
+ * @Date 2024/10/03
+ * @Description 定义精准查询库的算法类
+ * 接口中的泛型类型与分片键的类型一致
+ */
+public class MyPreciseShardingAlgorithm4Db implements PreciseShardingAlgorithm<Long> {
+    /**
+     *
+     * @param dbNames 一切配置中可用的数据源集合：ds1,ds2
+     * @param shardingValue 分片键信息的封装
+     * @return 返回具体一个数据源
+     */
+    @Override
+    public String doSharding(Collection<String> dbNames, PreciseShardingValue<Long> shardingValue) {
+        // 获取分片键的名称，这里为 "user_id"
+        String dbColumnName = shardingValue.getColumnName();
+
+        // 获取当前查询中的分片键值，即具体的 user_id 值
+        Long value = shardingValue.getValue();
+
+        // 获取当前查询涉及的逻辑表名称，例如 "t_user"
+        String logicTableName = shardingValue.getLogicTableName();
+
+        // 根据 user_id 的值决定数据应路由到哪个数据库
+        // 这里使用 user_id % 2 + 1 的结果来选择数据库，假设数据库名以数字结尾，如 "ds1", "ds2"
+        String idx = String.valueOf(value % 2 + 1);  // 结果为 "1" 或 "2"
+
+        // 从可用的数据库名集合中选择一个数据库名，该数据库名后缀应与 idx 相符
+        String dsName = dbNames.stream()
+                               .filter(dbName -> dbName.endsWith(idx))
+                               .findFirst()
+                               .orElseThrow(() -> new IllegalArgumentException("未找到合适的数据库"));
+        return dsName;
+    }
+}
+```
+
+逻辑详解
+
+1. **获取分片键名称和值**：
+   - `dbColumnName` 保存了用作分片依据的列名，这里是 `"user_id"`。
+   - `value` 是当前查询中的 `user_id` 的实际值。
+2. **计算数据库索引**：
+   - 通过 `value % 2 + 1` 的运算，将用户ID均匀地分配到两个数据库中。这里的 `% 2` 确保结果为 `0` 或 `1`，加 `1` 后变为 `1` 或 `2`，对应于数据库 "ds1" 或 "ds2"。
+3. **选择目标数据库**：
+   - 使用 `filter()` 方法筛选出名称以计算得到的索引（`idx`）结尾的数据库。
+   - `findFirst()` 返回第一个匹配的元素，如果没有找到匹配的数据库，则抛出异常。
+
+这段代码是一个典型的精准分片算法实现，适用于那些需要将数据均匀分配到几个数据库中的场景。通过简单的模运算，它实现了负载均衡的同时也保证了查询的一致性，即相同的 `user_id` 总是被路由到相同的数据库。这种方法特别适用于用户数量较大且数据分布要求均衡的应用场景。
+
+范围查询数据库实现：
+
+```java
+package com.itheima.algorithm;
+
+import com.google.common.collect.Range;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingValue;
+
+import java.util.Arrays;
+import java.util.Collection;
+
+/**
+ * @author by async
+ * @Date 2024/10/03
+ * @Description 定义范围匹配库
+ */
+public class MyRangeShardingAlgorithm4Db implements RangeShardingAlgorithm<Long> {
+
+    /**
+     * 根据片键的范围匹配数据库
+     * @param dsNames 所有数据源的名称集合
+     * @param shardingValue 片键信息的封装
+     * @return 当前数据库查询名称的数据库集合
+     * select * form xxx where user_id between 10 and 100
+     */
+    @Override
+    public Collection<String> doSharding(Collection<String> dsNames, RangeShardingValue<Long> shardingValue) {
+        // 获取分片键的名称，这对调试或复杂逻辑处理可能很重要
+        String columnName = shardingValue.getColumnName();
+
+        // 获取当前操作的逻辑表名称，对于日志和调试也很有用
+        String logicTableName = shardingValue.getLogicTableName();
+
+        // 获得分片键的范围，这个范围是由查询条件中的BETWEEN或比较运算符定义的
+        Range<Long> valueRange = shardingValue.getValueRange();
+
+        // 初始和结束的分片键值，用于决定哪些数据库需要被查询
+        Long start = null;
+        Long end = null;
+
+        // 判断查询是否指定了下界
+        if (valueRange.hasLowerBound()) {
+            // 获取范围查询的起始值
+            start = valueRange.lowerEndpoint();
+        }
+
+        // 判断查询是否指定了上界
+        if (valueRange.hasUpperBound()) {
+            // 获取范围查询的结束值
+            end = valueRange.upperEndpoint();
+        }
+
+        // 根据start和end决定哪些数据源应被包括在内
+        // 这里简化处理：假设任何范围内的查询都可能涉及到所有的数据源
+        // 在实际应用中，这部分应该根据业务逻辑进行复杂的计算，以决定最优的数据源选择
+        return Arrays.asList("ds1", "ds2");
+    }
+}
+```
+
+配置标准分库：
+
+```yaml
+spring:
+  shardingsphere:
+    datasource:
+      names: ds1,ds2  # 定义所有数据源的名称列表
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据源类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # 数据库驱动名称
+        url: jdbc:mysql://192.168.200.130:3306/order_db_1?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库连接URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      ds2:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据源类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # 数据库驱动名称
+        url: jdbc:mysql://192.168.200.130:3306/order_db_2?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库连接URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+
+    sharding:
+      tables:
+        t_order:
+          actual-data-nodes: ds$->{1..2}.t_order_$->{1..2}  # 定义表的物理位置，这里指示数据分布在ds1和ds2的t_order_1和t_order_2中
+          database-strategy:
+            standard:
+              sharding-column: user_id  # 分库使用的分片键列
+              precise-algorithm-class-name: com.itheima.algorithm.MyPreciseShardingAlgorithm4Db  # 精确分片策略算法类，处理=和IN条件
+              range-algorithm-class-name: com.itheima.algorithm.MyRangeShardingAlgorithm4Db  # 范围分片策略算法类，处理BETWEEN和其他范围条件
+          table-strategy:
+            inline:
+              sharding-column: order_id  # 分表使用的分片键列
+              algorithm-expression: t_order_$->{order_id % 2 +1}  # 分表策略的表达式，用Groovy语法定义
+
+    props:
+      sql:
+        show: true  # 是否显示SQL语句，对于调试非常有用
+
+```
+
+以下是带有中文注释的YAML配置，详细解释了每个部分的用途和设置方法：
+
+```yaml
+spring:
+  shardingsphere:
+    datasource:
+      names: ds1,ds2  # 定义所有数据源的名称列表
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据源类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # 数据库驱动名称
+        url: jdbc:mysql://192.168.200.130:3306/order_db_1?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库连接URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      ds2:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据源类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # 数据库驱动名称
+        url: jdbc:mysql://192.168.200.130:3306/order_db_2?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库连接URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+
+    sharding:
+      tables:
+        t_order:
+          actual-data-nodes: ds$->{1..2}.t_order_$->{1..2}  # 定义表的物理位置，这里指示数据分布在ds1和ds2的t_order_1和t_order_2中
+          database-strategy:
+            standard:
+              sharding-column: user_id  # 分库使用的分片键列
+              precise-algorithm-class-name: com.itheima.algorithm.MyPreciseShardingAlgorithm4Db  # 精确分片策略算法类，处理=和IN条件
+              range-algorithm-class-name: com.itheima.algorithm.MyRangeShardingAlgorithm4Db  # 范围分片策略算法类，处理BETWEEN和其他范围条件
+          table-strategy:
+            inline:
+              sharding-column: order_id  # 分表使用的分片键列
+              algorithm-expression: t_order_$->{order_id % 2 +1}  # 分表策略的表达式，用Groovy语法定义
+
+    props:
+      sql:
+        show: true  # 是否显示SQL语句，对于调试非常有用
+```
+
+注释说明
+
+- **数据源配置** (`datasource`): 设置各个数据源的详细连接信息，包括类型、驱动、URL、用户名和密码。
+- **分片配置** (`sharding`):
+  - **表配置** (`tables`): 针对每个需要分片的表进行配置。
+    - **实际数据节点** (`actual-data-nodes`): 指明每个表的数据实际存放的数据库和表名。
+    - **数据库策略** (`database-strategy`): 定义如何根据分片键分库。
+      - **标准策略** (`standard`): 使用标准策略处理分库逻辑，包括精确查询和范围查询的处理。
+    - **表策略** (`table-strategy`): 定义如何根据分片键分表。
+      - **内联策略** (`inline`): 通过简单的表达式直接定义分表逻辑。
+- **其他属性** (`props`): 设置额外的配置项，例如是否在日志中显示SQL语句，帮助调试。
+
+这样配置的好处是结构清晰，通过YAML的层次结构直观地表达了数据源配置与分片策略的关系，方便管理和调整。
+
+测试：
+
+```java
+    /**
+     * @Description 测试数据库标准精准查询=
+     */
+    @Test
+    public void test2(){
+        List<TOrder> tOrder = tOrderMapper.findByUserId(18l);
+        System.out.println(tOrder);
+    }
+
+    /**
+     * @Description 测试标准查询：范围匹配 between
+     */
+    @Test
+    public void test3(){
+        List<TOrder> tOrder = tOrderMapper.findByUserIdBetween(18l,70l);
+        System.out.println(tOrder);
+    }
+```
+
+## 标准模式最佳实践
+
+采用这样的实现方法，将 `PreciseShardingAlgorithm` 和 `RangeShardingAlgorithm` 结合在同一个类中，有几个关键优势：
+
+1. **简化配置**
+
+将精准查询和范围查询的逻辑集中在一个类中，可以减少在配置分片策略时需要指定的类的数量。这样，不仅可以减少重复代码，还可以使配置文件更加简洁。当两种算法逻辑相似或重叠时，这种方法尤其有用。
+
+2. **保持一致性**
+
+在一个类中实现两种分片策略，可以保证处理逻辑的一致性。这意味着对分片键的处理方式在精准查询和范围查询之间保持一致，有助于维护和可能的问题追踪。
+
+3. **优化性能**
+
+通过集成两种算法，可以共享某些计算或状态，如缓存分片结果或计算结果，这可能会在执行查询时提供性能优势。
+
+4. **减少错误和冗余**
+
+单独的算法可能需要重复一些逻辑，如数据源选择逻辑或解析分片键值的逻辑。将它们集中在一个地方可以减少错误，并确保所有相关逻辑都能及时更新，防止在算法之间出现不一致的行为。
+
+5. **易于管理和扩展**
+
+随着业务逻辑的发展，可能需要引入更复杂的分片逻辑或对现有逻辑进行调整。拥有一个集中的地方来处理所有分片逻辑，使得管理和扩展变得更加容易。如果需要修改分片逻辑，只需要更新一个类，而不是多个类，这简化了代码的维护和测试。
+
+通过这种方式，可以确保分片策略的整体一致性和可靠性，同时也提高了代码的可维护性和可扩展性。
+
+### 1 定义库的分片算法类
+
+~~~java
+package com.itheima.sharding.algorithm.common;
+
+import com.google.common.collect.Range;
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingValue;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingValue;
+
+import java.util.Arrays;
+import java.util.Collection;
+
+/**
+ * 同时实现 PreciseShardingAlgorithm 和 RangeShardingAlgorithm 接口的分片算法类
+ * 用于处理精确分片和范围分片逻辑。
+ */
+public class CommonAlgorithm4Db implements PreciseShardingAlgorithm<Long>, RangeShardingAlgorithm<Long> {
+
+    /**
+     * 处理精确分片的方法
+     * 主要用于处理使用 = 和 IN 操作符的 SQL 查询。
+     * 
+     * @param dsNames 所有配置的数据源名称集合
+     * @param shardingValue 分片键的封装对象，包含分片键的名称、值和逻辑表名
+     * @return 选择的数据源名称
+     */
+    @Override
+    public String doSharding(Collection<String> dsNames, PreciseShardingValue<Long> shardingValue) {
+        // 分片键的名称
+        String columnName = shardingValue.getColumnName();
+        // 逻辑表名称
+        String logicTableName = shardingValue.getLogicTableName();
+        // 分片键的值
+        Long value = shardingValue.getValue();
+        // 计算数据源后缀（模拟分片逻辑）
+        String sufix = String.valueOf(value % 2 + 1);
+        // 根据后缀选择数据源
+        String dsName = dsNames.stream().filter(ds -> ds.endsWith(sufix)).findFirst().orElseThrow(() -> new IllegalArgumentException("No datasource found"));
+        return dsName;
+    }
+
+    /**
+     * 处理范围分片的方法
+     * 主要用于处理使用 BETWEEN、>、< 等操作符的 SQL 查询。
+     * 
+     * @param dsNames 所有配置的数据源名称集合
+     * @param shardingValue 分片键的范围信息封装对象，包含分片键的名称、值的范围和逻辑表名
+     * @return 可能包含数据的所有数据源名称集合
+     */
+    @Override
+    public Collection<String> doSharding(Collection<String> dsNames, RangeShardingValue<Long> shardingValue) {
+        // 分片键的名称
+        String columnName = shardingValue.getColumnName();
+        // 逻辑表名称
+        String logicTableName = shardingValue.getLogicTableName();
+        // 分片键的值的范围
+        Range<Long> valueRange = shardingValue.getValueRange();
+        // 判断并获取范围的上限和下限
+        if (valueRange.hasUpperBound() && valueRange.hasLowerBound()) {
+            Long upper = valueRange.upperEndpoint();
+            Long lower = valueRange.lowerEndpoint();
+            // 打印范围上下限
+            System.out.println("Range from: " + lower + " to " + upper);
+        }
+        // 假设所有数据源都可能包含数据
+        return dsNames;
+    }
+}
+
+~~~
+
+### 2 定义表分片算法类
+
+~~~java
+package com.itheima.sharding.algorithm.common;
+
+import com.google.common.collect.Range;
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.PreciseShardingValue;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingAlgorithm;
+import org.apache.shardingsphere.api.sharding.standard.RangeShardingValue;
+
+import java.util.Arrays;
+import java.util.Collection;
+
+/**
+ * 定义了一个同时处理精准和范围分片的算法类，适用于分片表。
+ * 该类实现了ShardingSphere的PreciseShardingAlgorithm和RangeShardingAlgorithm接口。
+ */
+public class CommonAlgorithm4Tb implements PreciseShardingAlgorithm<Long>, RangeShardingAlgorithm<Long> {
+
+    /**
+     * 精准分片方法，用于处理等值条件的分片，如WHERE条件中使用=或IN的情况。
+     * @param tbNames 所有配置的物理表名称集合。
+     * @param shardingValue 分片键的封装对象，包含分片值和其他信息。
+     * @return 返回匹配的物理表名称。
+     */
+    @Override
+    public String doSharding(Collection<String> tbNames, PreciseShardingValue<Long> shardingValue) {
+        // 提取分片键名称和值
+        String columnName = shardingValue.getColumnName();  // 分片键名称
+        Long value = shardingValue.getValue();  // 分片键的值
+        String logicTableName = shardingValue.getLogicTableName();  // 逻辑表名称
+
+        // 根据分片键值计算对应的表后缀
+        String suffix = String.valueOf(value % 2 + 1);  // 计算表后缀
+        // 选择对应后缀的表名
+        String tableName = tbNames.stream().filter(name -> name.endsWith(suffix)).findFirst().orElseThrow(() -> new IllegalArgumentException("No table found"));
+        return tableName;
+    }
+
+    /**
+     * 范围分片方法，用于处理范围条件的分片，如WHERE条件中使用BETWEEN、>、<等。
+     * @param tbNames 所有配置的物理表名称集合。
+     * @param shardingValue 封装的分片范围信息。
+     * @return 返回匹配的物理表名称集合。
+     */
+    @Override
+    public Collection<String> doSharding(Collection<String> tbNames, RangeShardingValue<Long> shardingValue) {
+        // 提取范围查询的上下界
+        Range<Long> range = shardingValue.getValueRange();
+        Long lower = range.hasLowerBound() ? range.lowerEndpoint() : null;  // 下界值
+        Long upper = range.hasUpperBound() ? range.upperEndpoint() : null;  // 上界值
+
+        // 对于范围查询，通常需要返回所有可能的表，因为范围可能跨多个表
+        return tbNames;  // 返回所有表作为查询目标
+    }
+}
+
+~~~
+
+### 3  配置
+
+~~~yaml
+spring:
+  shardingsphere:
+    datasource:
+      names: ds1, ds2  # 数据源列表
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # JDBC 驱动类
+        url: jdbc:mysql://192.168.200.130:3306/order_db_1?serverTimezone=GMT%2B8  # 数据库 URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      ds2:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类型
+        driver-class-name: com.mysql.cj.jdbc.Driver  # JDBC 驱动类
+        url: jdbc:mysql://192.168.200.130:3306/order_db_2?serverTimezone=GMT%2B8  # 数据库 URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+
+    sharding:
+      tables:
+        t_order:
+          actual-data-nodes: ds${1..2}.t_order_${1..2}  # 定义物理表的位置
+          database-strategy:
+            standard:
+              sharding-column: user_id  # 分库策略的分片键
+              precise-algorithm-class-name: ${common.algorithm.db}  # 精确分片算法类
+              range-algorithm-class-name: ${common.algorithm.db}  # 范围分片算法类
+          table-strategy:
+            standard:
+              sharding-column: order_id  # 分表策略的分片键
+              precise-algorithm-class-name: ${common.algorithm.tb}  # 精确分片算法类
+              range-algorithm-class-name: ${common.algorithm.tb}  # 范围分片算法类
+
+      broadcast-tables: t_dict  # 定义广播表，常用于配置如数据字典等小表
+
+    props:
+      sql:
+        show: true  # 是否显示执行的 SQL 语句，帮助调试
+
+# 定义算法类别名，便于配置文件中引用
+common:
+  algorithm:
+    db: com.itheima.sharding.algorithm.common.CommonAlgorithm4Db  # 数据库分片算法类
+    tb: com.itheima.sharding.algorithm.common.CommonAlgorithm4Tb  # 表分片算法类
+
+~~~
+
+## ShardingSphere配置全览
+
+在ShardingSphere中，YAML配置文件通常包含多个关键部分，涵盖了数据源（DataSource）配置、分片策略、广播表、绑定表、属性设置等，用以支持复杂的数据库分片场景。下面是一个全面的YAML配置结构概述，每个部分都进行了详细的说明：
+
+### 配置结构全览
+
+1. **数据源配置 (`datasource`)**: 定义了所有数据库连接的详细信息。
+2. **分片规则 (`sharding`)**: 描述了如何分片表和数据库。
+3. **广播表配置 (`broadcast-tables`)**: 指定那些需要在所有数据库实例中完整复制的表。
+4. **绑定表配置 (`binding-tables`)**: 定义逻辑上相关联的表，这些表间的分片键相同。
+5. **属性配置 (`props`)**: 提供了用于调优和配置ShardingSphere行为的属性。
+6. **默认数据源配置 (`default-data-source-name`)**: 指定未配置分片规则的表默认使用的数据源。
+7. **主从复制配置 (`masterslave`)**: 配置读写分离和主从复制的规则。
+8. **加密规则配置 (`encrypt`)**: 配置数据加密规则，用于敏感数据的加密存储。
+
+### 示例配置详解
+
+```yaml
+spring:
+  shardingsphere:
+    # 数据源配置，列出所有数据源的标识
+    datasource:
+      names: ds0, ds1
+
+      # 第一个数据源的具体配置
+      ds0:
+        type: com.alibaba.druid.pool.DruidDataSource  # 使用Druid连接池
+        driver-class-name: com.mysql.cj.jdbc.Driver    # MySQL JDBC驱动
+        url: jdbc:mysql://localhost:3306/ds0           # 数据库URL
+        username: root                                 # 数据库用户名
+        password: password                             # 数据库密码
+
+      # 第二个数据源的具体配置
+      ds1:
+        type: com.alibaba.druid.pool.DruidDataSource  # 使用Druid连接池
+        driver-class-name: com.mysql.cj.jdbc.Driver    # MySQL JDBC驱动
+        url: jdbc:mysql://localhost:3306/ds1           # 数据库URL
+        username: root                                 # 数据库用户名
+        password: password                             # 数据库密码
+
+    # 分片配置，包括表分片和数据库分片策略
+    sharding:
+      default-data-source-name: ds0  # 默认数据源名称
+      broadcast-tables: [t_config]   # 广播表列表，广播表在所有数据源中都有完整的副本
+      binding-tables: [t_order, t_order_item]  # 绑定表组，分片键相同的表可以分到同一个表组
+
+      # 配置具体表的分片策略
+      tables:
+        t_order:
+          actual-data-nodes: ds${0..1}.t_order_${0..1}  # 定义物理节点，使用Groovy表达式生成
+          table-strategy:
+            standard:  # 标准分片策略
+              sharding-column: order_id  # 分片键
+              precise-algorithm-class-name: com.example.MyTablePreciseShardingAlgorithm  # 精确分片算法
+          database-strategy:
+            standard:
+              sharding-column: user_id  # 分库分片键
+              precise-algorithm-class-name: com.example.MyDBPreciseShardingAlgorithm  # 分库精确分片算法
+
+        t_order_item:
+          actual-data-nodes: ds${0..1}.t_order_item_${0..1}
+          table-strategy:
+            standard:
+              sharding-column: order_id
+              precise-algorithm-class-name: com.example.MyTablePreciseShardingAlgorithm
+
+    # 主从复制配置，实现读写分离
+    masterslave:
+      name: ms
+      master-data-source-name: ds0  # 主库数据源
+      slave-data-source-names: ds1  # 从库数据源列表
+
+    # 数据加密配置，用于敏感数据的加密存储
+    encrypt:
+      encryptors:
+        encryptor_aes:
+          type: aes
+          props:
+            aes.key.value: 123456abc
+      tables:
+        t_order:
+          columns:
+            user_id:
+              plainColumn: user_id_plain
+              cipherColumn: user_id_cipher
+              encryptor: encryptor_aes
+
+    # 其他配置属性
+    props:
+      sql:
+        show: true  # 是否打印SQL语句，用于调试
+
+```
+
+### 配置说明
+
+- **数据源配置** (`datasource`): 设置了两个数据源`ds0`和`ds1`，每个数据源都包括连接池类型、数据库驱动、URL、用户名和密码。
+- **分片规则** (`sharding`): 包括表的分片策略和数据库的分片策略，以及绑定表和广播表的设置。
+- **主从复制** (`masterslave`): 配置了主从复制，指定了主库和从库。
+- **数据加密** (`encrypt`): 配置了数据加密规则，用于敏感数据的处理。
+- **属性设置** (`props`): 如设置SQL显示，帮助调试和监控SQL查询。
+
+这种配置方式能够应对复杂的业务场景，支持大规模的数据库分片操作，提高系统的可扩展性和安全性。
+
+# 二十、Spring security
+
+## 权限数据模型
+
+在权限管理系统中，授权的基本结构通常涉及几个核心概念：主体（Subject）、资源（Resource）和权限（Permission）。这些构成了授权数据模型的基础。以下是这些概念的整合和更详细的介绍，包括它们在没有合并和合并后的不同模型设计中的表现。
+
+### 未合并的权限数据模型
+
+在未合并权限和资源之前的模型中，权限和资源通常是独立管理的：
+
+1. **主体（Subject）**:
+   - 表示可以请求访问资源的用户或用户组。
+   - 示例字段：用户ID、账号、密码等。
+
+2. **资源（Resource）**:
+   - 代表系统中需要受到保护的对象，例如数据、文件、服务或UI组件。
+   - 示例字段：资源ID、资源名称、访问地址等。
+
+3. **权限（Permission）**:
+   - 描述了主体对资源可以执行的操作类型，如读取、写入或修改。
+   - 示例字段：权限ID、权限描述等。
+   - 通常与资源通过一个关系表进行连接，指明哪些权限适用于哪些资源。
+
+4. **主体与权限的关系**:
+   - 这通常通过角色（一组权限）来间接实现，或者直接将用户与权限关联。
+
+### 权限与资源合并后的模型
+
+在一些场景下，为了简化模型和提高查询效率，可以将权限和资源合并为一个单一的实体。这样做通常在权限和资源关系相对简单且稳定的系统中较为常见。
+
+- **合并后的权限**:
+  - 包括资源信息的权限实体。
+  - 示例字段：权限ID、权限标识、权限名称、资源名称、资源访问地址等。
+  - 这种模型减少了多表连接查询的需要，使得权限检查更直接且性能更优。
+
+### 优点与缺点
+
+- **未合并模型**:
+  - **优点**：高度灵活和可扩展，适合需求复杂和频繁变动的系统。
+  - **缺点**：查询和维护更复杂，需要多表关联，可能影响性能。
+
+- **合并后的模型**:
+  - **优点**：简化了数据库结构，减少了查询时的连接，提高了性能。
+  - **缺点**：灵活性降低，每当资源信息需要更新时，可能需要更新大量的权限记录。
+
+### 选择哪种模型？
+
+选择使用哪种模型通常取决于系统的具体需求：
+- 如果系统需要处理复杂的权限逻辑或频繁变更的资源管理，使用未合并的模型可能更合适。
+- 如果系统的权限规则相对简单且资源不常变动，合并权限和资源可能会更有效率。
+
+通过理解这两种模型的优缺点和适用场景，可以更好地设计出适合具体业务需求的权限管理系统。
+
+
+
+## RBAC权限模型
+
+### 1 介绍
+
+​	如何实现授权？业界通常基于RBAC模型（Role-Based Access Control -> 基于角色的访问控制）实现授权。 RBAC认为授权实际就是who,what,how三者之间的关系(3W)，即who对what进行how的操作。
+
+### 2 基于角色访问控制
+
+RBAC基于角色的访问控制（Role-Based Access Control）是按角色进行授权，比如：主体的角色为总经理可以查询企业运营报表，查询员工工资信息等，访问控制流程如下： 
+
+![image-20241005160747472](./images/image-20241005160747472.png)
+
+根据上图中的判断逻辑，授权代码可表示如下： 
+
+```java
+if(主体.hasRole("总经理角色标识")){
+    //查询工资 
+}else{
+    //权限不足
+}
+```
+
+如果上图中查询工资所需要的角色变化为总经理和部门经理，此时就需要修改判断逻辑为“判断用户的角色是否是 总经理或部门经理”，修改代码如下： 
+
+```java
+if(主体.hasRole("总经理角色标识") || 主体.hasRole("部门经理角色标识")){ 
+	//查询工资 
+}else{
+    //权限不足
+}
+```
+
+根据上边的例子发现，当需要修改角色的权限时就需要修改授权的相关代码，系统可扩展性差。 
+
+### 3 基于资源访问控制
+
+RBAC基于资源的访问控制(Resource-Based Access Control)是按资源(或权限)进行授权。
+
+![image-20241005160805528](./images/image-20241005160805528.png)
+
+同样是上面的需求，这时候我们的代码变成了
+
+```
+if(Subject.hasPermission("查询员工工资的权限标识")){
+	// 查询员工工资
+}
+```
+
+优点：
+
+系统设计时定义好查询工资的权限标识，即使查询工资所需要的角色变化为总经理和部门经理也不需要修授权代码，**系统可扩展性强**。
+
+## 常见认证方式
+
+认证(登录)几乎是任何一个系统的标配，web 系统、APP、PC客户端等都需要注册、登录、授权。 
+
+### 1 Cookie-Session
+
+​	早期互联网以 web 为主，客户端是浏览器，所以 Cookie-Session 方式最那时候最常用的方式，直到现在，一些 web 网站依然用这种方式做认证；
+
+**认证过程大致如下：**
+
+A. 用户输入用户名、密码或者用短信验证码方式登录系统；
+
+B. 服务端验证后，创建一个 Session 记录用户登录信息 ，并且将 SessionID 存到 cookie，响应回浏览器；
+
+C. 下次客户端再发起请求，自动带上 cookie 信息，服务端通过 cookie 获取 Session 信息进行校验；
+
+![image-20241005161030528](./images/image-20241005161030528.png)
+
+**弊端**
+
+- 只能在 web 场景下使用，如果是 APP 中，不能使用 cookie 的情况下就不能用了；
+- 即使能在 web 场景下使用，也要考虑跨域问题，因为 cookie 不能跨域；（域名或者ip一致，端口号一致，协议要一致）
+- cookie 存在 CSRF（跨站请求伪造）的风险；
+- 如果是分布式服务，需要考虑 Session 同步（同步）问题；
+- session-cookie机制是有状态的方式（后端保存主题的用户信息-浪费后端服务器内存）
+
+
+### 2 jwt令牌无状态认证
+
+JSON Web Token（JWT-字符串）是一个非常轻巧的规范。这个规范允许我们使用JWT在用户和服务器之间传递安全可靠的信息。
+
+**认证过程: **
+
+A. 依然是用户登录系统；
+
+B. 服务端验证，并通过指定的算法生成令牌返回给客户端;
+
+C. 客户端拿到返回的 Token，存储到 local storage/session Storate/Cookie中；
+
+D. 下次客户端再次发起请求，将 Token 附加到 header 中；
+
+E. 服务端获取 header 中的 Token ，通过相同的算法对 Token 进行验证，如果验证结果相同，则说明这个请求是正常的，没有被篡改。这个过程可以完全不涉及到查询 Redis 或其他存储；
+
+![image-20241005161054128](./images/image-20241005161054128.png)
+
+**优点**
+
+A. 使用 json 作为数据传输，有广泛的通用型，并且体积小，便于传输；
+
+B. 不需要在服务器端保存相关信息，节省内存资源的开销；
+
+C. jwt 载荷部分可以存储业务相关的信息（非敏感的），例如用户信息、角色等；
+
+> 关于Jwt的详细内容，前面有讲过。
+
+### 补充：Jwt不是无状态吗？那么Hmac算法里的secret值不是也要存储在客户端吗？
+
+确实，JWT（JSON Web Token）本身被设计为无状态的，意味着服务端不需要保存任何会话数据。然而，为了验证JWT的签名有效性，服务端确实需要知道用于签名的密钥。这在使用对称加密算法如HMAC（Hash-based Message Authentication Code）时尤其明显。在HMAC中，相同的密钥用于生成和验证令牌的签名。
+
+#### 为何需要密钥？
+
+1. **验证签名**：JWT的签名部分是通过对header和payload进行加密生成的，确保令牌在传输过程中未被篡改。服务端在接收到JWT后，会用相同的密钥重新生成签名，然后与令牌中提供的签名进行比较。如果两者相同，则验证成功，令牌未被篡改。
+
+2. **安全性考虑**：虽然JWT的payload和header都是Base64编码的，这种编码是可逆的，任何拿到JWT的人都可以解码看到里面的内容。因此，敏感信息绝对不应该在JWT的payload或header中明文存储。签名确保了JWT的完整性，但密钥的安全性是至关重要的。
+
+#### 如何处理密钥？
+
+- **密钥存储**：对于使用HMAC算法的JWT，密钥必须在服务端安全存储，通常是在环境变量中或使用专门的密钥管理系统存储。这个密钥必须被严格保密，任何泄露都可能允许攻击者伪造有效的JWT。
+
+- **密钥访问**：只有需要生成或验证JWT的服务组件应该能访问这个密钥。最小权限原则可以减少密钥被不当访问的风险。
+
+#### 无状态的含义
+
+尽管密钥需要保存在服务器上，JWT被认为是无状态的，因为服务端不需要保存任何关于用户的状态信息。所有必要的信息都存储在JWT本身，并且每次请求都会发送JWT。这与传统的会话管理不同，后者通常需要在服务端存储大量会话数据。JWT的无状态性质使得它非常适合构建可扩展的大规模应用，因为不需要同步或存储用户会话信息。
+
+综上，虽然服务端确实需要保存密钥来验证JWT，这个过程并不违背JWT的无状态设计原则。无状态指的是服务端不需要存储用户的状态信息，而不是说服务端不存储任何数据。密钥管理对于维护JWT的安全性来说是非常关键的一环。
+
+### 常见技术实现
+
+| 技术               | 概述                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| Apache Shiro       | Apache旗下的一款安全框架                                     |
+| **SpringSecurity** | Spring家族的一部分, Spring体系中提供的安全框架, 包含认证、授权两个大的部分 |
+| CAS                | CAS是一个单点登录(SSO)服务，开始是由耶鲁大学的一个组织开发，后来归到apereo去管 |
+| 自行实现           | 自行通过业务代码实现（基于filter过滤器或者springmvc拦截器+AOP）, 实现繁琐, 代码量大 |
+
+## Spring Security自定义配置
+
+### Spring Security 自定义授权配置（基于编码方式）
+
+在 Spring Security 中，自定义授权的目的是根据不同用户的角色或权限，来控制其访问资源的能力。我们将详细讲解基于编码方式定义授权配置的方式，这是最常见的一种方式，适合初学者理解 Spring Security 的基本概念。
+
+#### 1. 定义 `SecurityConfig` 配置类
+
+Spring Security 通过定义配置类来控制认证和授权。你需要创建一个类，继承 `WebSecurityConfigurerAdapter`，并在里面进行配置。这个类用于告诉 Spring Security 应该如何保护应用程序的资源。
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+```
+
+- `@Configuration`：告诉 Spring 这个类是一个配置类，会像其他的 Spring 配置类一样被扫描和加载。
+- `@EnableWebSecurity`：开启 Spring Security 的安全功能，使得所有的请求都会被安全机制所保护。
+
+#### 2. 配置用户详情服务 (`UserDetailsService`)
+
+Spring Security 通过 `UserDetailsService` 来管理用户信息。在这个例子中，我们使用内存中的用户数据。
+
+```java
+@Bean
+@Override
+public UserDetailsService userDetailsService() {
+    InMemoryUserDetailsManager inMemoryUserDetailsManager = new InMemoryUserDetailsManager();
+    inMemoryUserDetailsManager.createUser(User.withUsername("itcast")
+        .password("{noop}123456")
+        .authorities("P1", "ROLE_ADMIN")
+        .build());
+    inMemoryUserDetailsManager.createUser(User.withUsername("itheima")
+        .password("{noop}123456")
+        .authorities("O1", "ROLE_SELLER")
+        .build());
+    return inMemoryUserDetailsManager;
+}
+```
+
+- `InMemoryUserDetailsManager`：这是一个用于存储内存中的用户信息的实现。
+- `createUser`：创建用户，其中用户名为 `itcast` 和 `itheima`，密码为 `123456`。
+- `{noop}`：用于表示密码没有加密。你可以使用加密算法（例如 `{bcrypt}`）来加密密码。
+- `authorities`：定义用户的权限和角色，`P1` 和 `O1` 是权限，`ROLE_ADMIN` 和 `ROLE_SELLER` 是角色。
+
+#### 3. 配置 HTTP 安全 (`HttpSecurity`)
+
+在这里，我们配置 Spring Security 如何保护资源。
+
+```java
+@Override
+protected void configure(HttpSecurity http) throws Exception {
+    http.formLogin() // 开启表单登录
+        .and()
+        .logout() // 开启默认的登出功能，访问 /logout 可以登出
+        .permitAll() // 允许所有用户访问登出功能
+        .and()
+        .csrf().disable() // 关闭 CSRF 防护
+        .authorizeRequests() // 启用授权
+        .antMatchers("/register").permitAll() // 允许所有用户访问 /register 页面
+        .antMatchers("/hello").hasAuthority("P5") // 只有具有 P5 权限的用户才能访问 /hello
+        .antMatchers("/say").hasRole("ADMIN") // 只有具有 ADMIN 角色的用户才能访问 /say
+        .anyRequest().authenticated(); // 其他所有请求都需要认证
+}
+```
+
+- `formLogin()`：启用 Spring Security 提供的默认表单登录功能。
+- `logout()`：启用登出功能，默认情况下 `/logout` 就是登出的路径。
+- `csrf().disable()`：关闭 CSRF 防护。CSRF 是一种跨站请求伪造的攻击，这里为了简单起见我们关闭了它。
+- `authorizeRequests()`：开始配置授权规则。
+- `antMatchers()`：指定路径和访问规则：
+  - `/register`：允许所有用户访问。
+  - `/hello`：只有具有 `P5` 权限的用户才能访问。
+  - `/say`：只有具有 `ADMIN` 角色的用户才能访问。
+  - `anyRequest().authenticated()`：其他所有请求都需要用户登录才能访问。
+
+#### 4. 运行机制
+
+- 当用户访问某个受保护的资源时，Spring Security 会首先检查用户是否已经登录。如果未登录，Spring Security 会自动跳转到登录页面。
+- 登录成功后，Spring Security 会验证用户的角色和权限，确定是否允许用户访问指定的资源。
+
+### 小结
+
+- **用户信息**：通过 `InMemoryUserDetailsManager` 管理，在实际项目中可以替换为数据库用户管理。
+- **权限控制**：通过 `.antMatchers()` 配置访问路径和所需权限/角色。
+- **登录/登出**：使用 Spring Security 提供的默认表单登录/登出功能。
+
+这种基于编码的授权方式清晰、简单，适合初学者了解 Spring Security 的工作流程。如果你有更多的用户或权限管理需求，可以进一步扩展此配置。
+
+### Spring Security 基于注解的授权配置
+
+基于注解的授权配置在 Spring Security 中提供了更细粒度的控制，使得权限控制可以直接在方法级别进行定义。这种方式提供了高度的灵活性，使得权限的管理和代码的维护变得更为集中和明确。
+
+#### 1. 开启注解支持
+
+首先，需要在 Spring Security 配置类中开启方法安全注解的支持，这是通过在配置类上添加 `@EnableGlobalMethodSecurity` 注解并设置 `prePostEnabled = true` 来实现的。
+
+```java
+@Configuration
+@EnableWebSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true) // 开启方法安全注解支持
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+    // 用户详情和HTTP安全配置略...
+}
+```
+
+- `@EnableGlobalMethodSecurity(prePostEnabled = true)`：允许我们在方法上使用安全相关的注解，如 `@PreAuthorize`、`@PostAuthorize` 等。
+
+#### 2. 定义资源访问的授权注解
+
+在控制器或服务层的方法上，我们可以使用 Spring Security 提供的注解来定义谁可以访问该方法。这些注解包括但不限于：
+
+- `@PreAuthorize`：在方法执行之前进行权限验证。
+- `@PostAuthorize`：在方法执行之后进行权限验证。
+- `@Secured`：Spring Security 的另一种简单权限注解，与 `@PreAuthorize` 类似但功能更简单。
+
+```java
+@RestController
+public class MyController {
+
+    @PreAuthorize("hasAuthority('P5')")
+    @GetMapping("/hello")
+    public String hello() {
+        return "Hello, you have P5 authority!";
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/say")
+    public String say() {
+        return "Hello, you are an ADMIN!";
+    }
+
+    @PermitAll
+    @GetMapping("/register")
+    public String register() {
+        return "Registration open for all";
+    }
+}
+```
+
+- `@PreAuthorize("hasAuthority('P5')")`：只有拥有 `P5` 权限的用户才能访问 `hello()` 方法。
+- `@PreAuthorize("hasRole('ADMIN')")`：只有拥有 `ADMIN` 角色的用户才能访问 `say()` 方法。
+- `@PermitAll`：允许所有用户（包括未经认证的用户）访问 `register()` 方法。
+
+#### 3. 配置 HTTP 安全以支持注解
+
+虽然方法上已经定义了安全注解，我们依然需要在 `HttpSecurity` 配置中适当放宽或指定某些安全设置，以确保注解能正常工作。
+
+```java
+@Override
+protected void configure(HttpSecurity http) throws Exception {
+    http
+        .formLogin()
+        .and()
+        .logout().permitAll()
+        .and()
+        .csrf().disable()
+        .authorizeRequests()
+        .antMatchers("/css/**", "/js/**").permitAll()
+        .anyRequest().authenticated(); // 其他所有请求都需要认证
+}
+```
+
+- 这里我们对静态资源（如 CSS 和 JS 文件）使用 `.permitAll()` 方法来允许无条件访问。
+- 对于其他所有请求，我们要求用户必须认证后才能访问，但具体的访问控制是通过方法上的注解来定义的。
+
+### 小结
+
+基于注解的授权方式在 Spring Security 中提供了非常强大和灵活的权限控制机制。通过在方法级别直接定义权限规则，开发者可以更加明确地控制每个操作的安全需求，同时保持配置的集中化和简洁性。这种方法特别适合在中大型项目中使用，其中权限控制需求复杂且频繁变动。
+
+
+
+## @PostAuthorize使用场景
+
+使用 `@PostAuthorize` 注解来在方法执行之后进行权限验证的场景较为特殊，但在一些复杂的安全需求中它非常有用。这种方式可以基于方法的执行结果来做出安全决策。下面列举一些使用 `@PostAuthorize` 的场景：
+
+### 1. 验证返回值
+`@PostAuthorize` 允许访问方法返回的对象，你可以根据返回的结果来决定是否授权。这种方式适合于操作完成后，需要根据操作结果来进行安全校验的场景。
+
+**示例：**
+```java
+@PostAuthorize("returnObject.owner == authentication.name")
+public Document getDocument(Long id) {
+    return documentRepository.findById(id);
+}
+```
+在这个示例中，只有当文档的拥有者（owner）是当前认证用户时，用户才有权限查看该文档。这意味着方法执行完成后，会检查返回的 `Document` 对象的 `owner` 属性是否与当前认证用户的用户名匹配。
+
+### 2. 根据执行结果进行安全日志记录或处理
+在某些情况下，你可能需要根据方法的执行结果来进行一些后续的安全日志记录或者执行一些安全相关的操作。
+
+**示例：**
+```java
+@PostAuthorize("hasRole('ADMIN') or returnObject.type == 'PUBLIC'")
+public File getFile(Long id) {
+    return fileRepository.findById(id);
+}
+```
+这里，方法会在执行后检查：如果返回的文件类型是公开的，或者用户拥有管理员权限，那么访问是被允许的。这可以用来限制对敏感或私有文件的访问，同时允许公开文件被任何人访问。
+
+### 3. 条件复杂的后处理
+
+在一些业务流程中，可能需要在方法执行后根据多个条件来判断用户的访问权限，这些条件可能包括方法返回值、方法参数和用户的身份信息。
+
+**示例：**
+
+```java
+@PostAuthorize("hasRole('ADMIN') or (returnObject.status == 'COMPLETED' and #id == principal.userId)")
+public Process getProcess(Long id) {
+    return processRepository.findById(id);
+}
+```
+这个示例中，只有在以下情况之一成立时，用户才能访问返回的流程对象：用户是管理员；或者该流程的状态是“已完成”且流程ID与用户的ID匹配。
+
+### 总结
+
+`@PostAuthorize` 提供了一种强大的机制，允许在方法执行后根据实际的执行结果来做出访问控制决策。这种方法的使用虽然不如 `@PreAuthorize` 那样常见，但在需要对方法的输出结果进行安全控制的场景中非常有用。
+
+
+
+## Bcrypt算法
+
+Bcrypt 是一种用于密码散列的加密算法，它由 Niels Provos 和 David Mazières 在 1999 年设计。Bcrypt 特别设计用于保护密码的存储，其核心目的是使破解密码的尝试变得极其困难。这是通过使用盐（salt）和重复工作因子（work factor，也称为成本因子）来增加散列过程的复杂性和时间成本来实现的。
+
+### Bcrypt 的工作原理：
+
+1. **盐（Salt）**:
+   - Bcrypt 算法在密码散列过程中使用一个随机生成的盐（salt）。盐是一个随机值，与密码一起散列，以防止同一密码在每次散列时都生成相同的结果。这有助于抵御彩虹表攻击，彩虹表是预先计算好的散列值表。
+
+2. **成本因子（Cost Factor）**:
+   - Bcrypt 允许你设置一个成本因子（一个整数），它基本上决定了散列函数的运行时间和复杂性。成本因子越高，生成散列和验证密码的过程越慢。这增加了暴力破解攻击的难度，因为每个密码猜测的计算成本都更高。
+
+3. **算法结构**:
+   - Bcrypt 基于 Blowfish 对称块加密算法构建，它将盐、成本因子和密码结合起来生成一个散列值。最终的散列包括算法的版本、成本因子、使用的盐和散列本身。
+
+### 使用 Bcrypt 的好处：
+
+- **防止彩虹表攻击**：由于每个密码散列都使用了唯一的盐，即使是相同的密码也会产生不同的散列结果。
+- **自适应**：随着硬件性能的提升，可以通过增加成本因子来增加散列的复杂性，从而使算法适应未来的威胁。
+- **抵御暴力攻击**：由于散列的计算成本很高，暴力破解攻击变得不可行。
+
+### 示例（Java 中的使用）：
+
+在 Java 中，你可以使用 `BCryptPasswordEncoder` 类，它是 Spring Security 框架提供的，用于在应用程序中实现 Bcrypt 散列和验证。
+
+```java
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+
+public class BcryptExample {
+    public static void main(String[] args) {
+        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+        
+        // 加密密码
+        String rawPassword = "password123";
+        String encodedPassword = encoder.encode(rawPassword);
+        System.out.println("Encoded Password: " + encodedPassword);
+        
+        // 验证密码
+        boolean isMatch = encoder.matches(rawPassword, encodedPassword);
+        System.out.println("Password match: " + isMatch);
+    }
+}
+```
+
+这个例子展示了如何使用 BCrypt 生成密码的散列值，并如何验证输入密码是否与存储的散列值匹配。
+
+总的来说，Bcrypt 是一种强大的密码散列机制，非常适合保护用户密码等敏感数据，确保应用程序的安全性。
+
+### 盐值的作用和处理方式
+
+在 BCrypt 哈希过程中，盐值（salt）本身不需要经过哈希处理。盐值的目的是为了添加到密码上，增加密码的复杂度和唯一性，从而防止彩虹表攻击和提高破解难度。盐值是明文存储在哈希字符串中的，这样在验证密码时可以直接提取并使用。
+
+1. **作用**：
+   - 盐值通过确保即使两个用户具有相同的密码，他们的哈希值也将不同，从而提供额外的安全性。
+   - 盐值使得每次对相同密码的哈希都是唯一的，因此即使攻击者得到了哈希值，也不能简单地通过查找预生成的哈希值（彩虹表）来找到原密码。
+
+2. **处理方式**：
+   - 在生成哈希时，首先生成一个随机的盐值。
+   - 这个盐值与用户的密码明文结合，然后整体进行哈希运算。
+   - 盐值以明文形式与结果哈希值一起存储，通常是作为哈希字符串的一部分直接前置在哈希值之前。
+
+3. **存储和使用**：
+   - 存储的哈希字符串通常包含几个部分：标识哈希类型的前缀、成本因子、盐值和实际的哈希值。
+   - 在密码验证时，从存储的哈希字符串中直接提取盐值，然后将其与提供的密码明文一起使用相同的哈希算法重新计算哈希。
+   - 如果重新计算的哈希值与存储的哈希值匹配，则密码验证成功。
+
+### 结论
+
+因此，盐值在 BCrypt 中不需要被哈希处理，它是作为密码哈希过程的一部分而直接使用的，并以明文形式存储以便将来的密码验证可以重用相同的盐值。这样的设计确保了盐值的目的——提高密码存储的安全性——得以实现，而不会降低系统的验证效率。
+
+
+
+## Pepper
+
+**Pepper** 是一个在密码存储安全性中使用的概念，它类似于 **salt**，但有几个关键的区别。Pepper 通常用于增强存储密码的哈希值的安全性，使得即使在数据库被泄露的情况下，攻击者也更难破解密码。以下是 pepper 的一些基本特点：
+
+### 1. 定义和用途
+Pepper 是一个固定的值，用于密码哈希过程中与用户的密码和可能的盐值一起使用。它的主要目的是为了增加密码哈希过程的复杂度和安全性。
+
+### 2. 存储和管理
+不同于盐值，pepper 不是随机生成的，也不是为每个用户密码存储一个唯一值。它通常是一个系统级的密钥，存储在应用程序配置中，或者硬编码在程序中。Pepper 通常不会存储在数据库中，这意味着即使数据库被完全泄露，没有访问应用程序的内部，攻击者也无法获取 pepper 的值。
+
+### 3. 安全性增强
+Pepper 的使用增加了所谓的 "工作因子"，即破解密码所需的计算复杂度。它在与盐值一起使用时，可以有效地阻止使用彩虹表和其他预计算攻击方法破解密码。
+
+### 4. 应用方式
+在实际应用中，pepper 可以在哈希密码前与用户的密码（和盐值）一起加入到哈希函数中。例如，如果使用 SHA-256 哈希函数，哈希过程可能是将用户密码、盐值和 pepper 连接后再进行哈希。
+
+### 5. 验证密码
+当需要验证用户输入的密码时，系统会取得相同的 pepper 和盐值，将它们与输入的密码按相同的方法组合，然后进行哈希处理。如果结果与数据库中存储的哈希值相匹配，则认证成功。
+
+### 6. 安全性讨论
+虽然 pepper 提供了额外的安全保障，但它的安全性依赖于 pepper 的保密性。如果 pepper 被泄露，那么其提供的所有额外安全性都将丧失。因此，保护好应用程序的配置和源代码是非常重要的。
+
+Pepper 是密码存储策略中的一个高级特性，不是所有系统都需要或实现它，但对于提高存储密码的安全性，尤其是在对安全要求非常高的环境中，它是一个非常有价值的添加。
+
+## 动态加载用户权限实现
+
+在Spring Security中，通过动态加载用户权限实现细粒度的访问控制非常常见。这通常涉及到从数据库动态查询用户信息，包括用户的用户名、密码和权限（角色）。以下详细介绍如何配置和实现这一过程。
+
+### 1 密码加密处理
+
+首先，我们在Spring Security配置类中设置用户详细信息服务，以使用加密的密码。在这个例子中，我们使用了内存存储的方式来演示，但实际生产中会从数据库动态读取用户信息。
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    // 配置Bean来设置用户详细信息服务
+    @Bean
+    public UserDetailsService userDetailsService() {
+        InMemoryUserDetailsManager manager = new InMemoryUserDetailsManager();
+        manager.createUser(User.withUsername("itcast")
+                               .password("$2a$10$qcKkkvsoClF9tO8c9wlR/ebgU8VM39GP5ZUdsts.XSPDmE40l.BP2")
+                               .authorities("P1", "ROLE_ADMIN").build());
+        manager.createUser(User.withUsername("itheima")
+                               .password("$2a$10$qcKkkvsoClF9tO8c9wlR/ebgU8VM39GP5ZUdsts.XSPDmE40l.BP2")
+                               .authorities("O1", "ROLE_SELLER").build());
+        return manager;
+    }
+}
+```
+
+### 2 动态查询用户
+
+在实际应用中，用户的认证信息通常存储在数据库中。我们需要配置数据库连接和MyBatis来查询用户数据。
+
+上述的案例中, 用户名密码都是在代码中写死的, 现在实际项目中, 是需要动态从数据库查询;简易的数据库表如下: 
+
+```sql
+create database security_demo default charset=utf8mb4;
+use security_demo;
+
+CREATE TABLE `tb_user` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(100) DEFAULT NULL,
+  `password` varchar(100) DEFAULT NULL,
+  `roles` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO `tb_user` VALUES (1, 'itcast', '$2a$10$f43iK9zKD9unmgLao1jqI.VluZ.Rr/XijizVEA73HeOu9xswaUBXC', 'ROLE_ADMIN,P5');
+INSERT INTO `tb_user` VALUES (2, 'itheima', '$2a$10$f43iK9zKD9unmgLao1jqI.VluZ.Rr/XijizVEA73HeOu9xswaUBXC', 'ROLE_SELLER,P7,ROLE_ADMIN');
+```
+
+![image-20241005223834228](./images/image-20241005223834228.png)
+
+**A. 添加依赖（pom.xml）**
+
+确保你的项目中加入了MyBatis和数据库连接的相关依赖。
+
+```xml
+<dependency>
+  <groupId>org.mybatis.spring.boot</groupId>
+  <artifactId>mybatis-spring-boot-starter</artifactId>
+  <version>2.1.4</version>
+</dependency>
+<dependency>
+  <groupId>mysql</groupId>
+  <artifactId>mysql-connector-java</artifactId>
+</dependency>
+```
+
+**B. 配置数据库连接（application.yml）**
+
+```yaml
+spring:
+  application:
+    name: security_test
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://192.168.188.130:3306/security_demo?serverTimezone=UTC
+    username: root
+    password: root
+  mybatis:
+    mapper-locations: classpath:mapper/*xml
+    type-aliases-package: com.itheima.security.pojo
+```
+
+**C. 实体类和Mapper配置**
+
+定义用户实体类和MyBatis的Mapper接口。
+
+```java
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class TbUser implements Serializable {
+    private Integer id;
+    private String username;
+    private String password;
+    private String roles;
+}
+
+@Mapper
+public interface TbUserMapper {
+    TbUser findByUserName(@Param("userName") String userName);
+}
+```
+
+**D. 自定义UserDetailsService**
+
+实现 `UserDetailsService` 接口，使用MyBatis从数据库查询用户信息。
+
+```java
+@Component
+public class UserDetailsServiceImpl implements UserDetailsService {
+    @Autowired
+    private TbUserMapper tbUserMapper;
+
+    @Override
+    public UserDetails loadUserByUsername(String userName) throws UsernameNotFoundException {
+        TbUser user = tbUserMapper.findByUserName(userName);
+        if (user == null) {
+            throw new UsernameNotFoundException("用户不存在");
+        }
+        List<GrantedAuthority> authorities = AuthorityUtils.commaSeparatedStringToAuthorityList(user.getRoles());
+        return new User(user.getUsername(), user.getPassword(), authorities);
+    }
+}
+```
+
+这样配置后，Spring Security将能够在用户登录时动态地从数据库中检索用户信息，并根据存储的加密密码和用户的输入进行匹配验证。
+
+
+
+## 认证原理分析
+
+在Spring Security中，认证过程是通过一系列精心设计的过滤器链（filter chain）来处理的。每个过滤器都有特定的职责，它们协同工作以确保请求的安全性。让我们详细分析下这个认证过程：
+
+![image-20241005224537528](./images/image-20241005224537528.png)
+
+### **过滤器链**
+
+Spring Security 初始化时，会创建一个特殊的Servlet过滤器，名为 `SpringSecurityFilterChain`。这不是一个实际的过滤器，而是一个由多个实际安全过滤器组成的代理，这些过滤器共同构成了一个执行链。
+
+让我们再深入一些来详细解释Spring Security中各个过滤器的作用以及整个认证流程的具体细节，帮助你更好地理解这个复杂的框架。
+
+### **Spring Security核心过滤器详解**
+
+Spring Security的安全机制主要通过一系列的过滤器实现，这些过滤器组合成一个过滤器链。下面是一些关键过滤器及其作用的详细说明：
+
+#### **1. SecurityContextPersistenceFilter**
+
+- **职责**: 维护安全上下文`SecurityContext`。它确保每个请求都能够加载和存储`SecurityContext`，这是关于当前用户认证状态的信息。
+- **工作流程**: 在请求开始时，从HTTP session中获取`SecurityContext`，并将其存储在`SecurityContextHolder`中，使得后续的过滤器或者应用中的其他部分能够访问。请求结束时，它再将可能被更新的`SecurityContext`保存回session，并从`SecurityContextHolder`中清除。
+
+#### **2. UsernamePasswordAuthenticationFilter**
+
+- **职责**: 处理基于表单的登录请求。
+- **工作流程**: 拦截POST请求，尤其是那些包含用户名和密码的请求。从请求中提取用户名和密码，创建一个`UsernamePasswordAuthenticationToken`，这是一个`Authentication`接口的实现。然后，将这个token传递给`AuthenticationManager`来进行认证。
+
+#### **3. FilterSecurityInterceptor**
+
+- **职责**: 访问控制，确保用户对所请求资源的访问权限。
+- **工作流程**: 在过滤器链的最末端调用，根据安全元数据（例如配置的URL权限规则）以及`Authentication`对象（包含用户的认证信息和权限）来决定是否允许访问请求的资源。
+
+#### **4. ExceptionTranslationFilter**
+
+- **职责**: 异常处理，处理访问资源时发生的安全相关异常。
+- **工作流程**: 捕获过滤器链中抛出的`AuthenticationException`（认证异常）和`AccessDeniedException`（授权异常）。根据异常类型，它可以决定是重定向到登录页面，还是向用户显示访问拒绝消息。
+
+### **认证管理器（AuthenticationManager）**
+
+- **核心组件**: `AuthenticationManager`是Spring Security认证机制的中心，它管理着认证过程。
+- **工作流程**: `AuthenticationManager`接收一个`Authentication`对象（如`UsernamePasswordAuthenticationToken`），然后使用配置的`UserDetailsService`来加载用户详情，并使用`PasswordEncoder`验证密码是否正确。如果认证成功，它会返回一个已填充好权限的`Authentication`对象，表示已认证的用户。
+
+### **如何适应不同的认证需求？**
+
+- **自定义UserDetailsService**: 开发者可以通过实现自己的`UserDetailsService`来定义如何从数据库或其他地方加载用户信息。
+- **自定义PasswordEncoder**: 根据安全需求，开发者可以选择合适的密码编码器，例如BCryptPasswordEncoder，以提供强大的密码安全性。
+
+通过这种方式，Spring Security提供了一套既强大又灵活的安全框架，可以通过配置和扩展来满足不同应用的安全需求。理解这些核心组件和流程对于有效地使用Spring Security至关重要。希望这种详细的解释能帮助你更好地理解Spring Security的工作机制。
+
+### **核心代码分析**
+
+`UsernamePasswordAuthenticationFilter` 是处理用户名和密码提交的核心。它的 `attemptAuthentication` 方法如下所述：
+
+```java
+public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+    // 首先检查是否是POST请求，因为身份验证只支持POST方法
+    if (this.postOnly && !request.getMethod().equals("POST")) {
+        // 如果不是POST请求，抛出异常
+        throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+    } else {
+        // 从请求中获取用户名，默认表单输入字段名为username
+        String username = this.obtainUsername(request);
+        // 从请求中获取密码，默认表单输入字段名为password
+        String password = this.obtainPassword(request);
+
+        // 如果用户名为空，则置为空字符串，避免后续处理出现空指针异常
+        if (username == null) {
+            username = "";
+        }
+
+        // 如果密码为空，也置为空字符串
+        if (password == null) {
+            password = "";
+        }
+
+        // 去除用户名前后的空白字符
+        username = username.trim();
+
+        // 创建一个UsernamePasswordAuthenticationToken实例，这是一个Authentication实现类
+        // 这个token将包含用户提交的用户名和密码
+        UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(username, password);
+
+        // 将请求的详细信息（如session、IP等）设置到认证请求中
+        this.setDetails(request, authRequest);
+
+        // 调用AuthenticationManager的authenticate方法进行实际的认证操作
+        // authenticate方法将会调用配置好的UserDetailsService以及密码加密器等来验证用户名和密码的正确性
+        return this.getAuthenticationManager().authenticate(authRequest);
+    }
+}
+
+```
+
+代码功能说明：
+
+- **方法作用**：该方法主要用于处理用户的登录请求，验证用户提供的用户名和密码。
+- **检查请求方法**：只接受POST方法提交的数据，保证安全性。
+- **用户名和密码处理**：从请求中获取用户名和密码，并对空值进行处理，避免空指针异常。
+- **创建认证Token**：使用获取到的用户名和密码创建一个`UsernamePasswordAuthenticationToken`对象，此对象将被用于身份验证。
+- **设置详细信息**：将请求的一些详细信息设置到认证请求中，比如IP地址、Session信息等。
+- **认证过程**：通过`AuthenticationManager`的`authenticate`方法，调用配置的`UserDetailsService`和密码校验逻辑来验证用户身份。
+
+*关键步骤解析**:
+
+- **获取用户名和密码**：从请求中提取用户名和密码。
+- **创建认证令牌**：使用提取的用户名和密码创建 `UsernamePasswordAuthenticationToken`。
+- **提交认证请求**：调用 `AuthenticationManager` 的 `authenticate` 方法对令牌进行认证。
+- **认证管理器**：它将使用配置的 `UserDetailsService` 来加载用户详细信息，并与提交的认证令牌进行比对。
+
+### **总结**
+
+通过上述过滤器的协作，Spring Security 提供了一个强大而灵活的安全框架，可以处理各种认证和授权需求。过滤器链的配置可以根据具体需求进行调整，这提供了极大的灵活性来适应不同的安全策略。
+
+
+
+## SecurityContextPersistenceFilter
+
+`SecurityContextPersistenceFilter` 在 Spring Security 过滤器链中的作用主要是管理安全上下文（Security Context）的存储和加载。这个过滤器确保每个请求都能在处理的开始时加载正确的认证信息（如当前用户），并在请求结束时清理并保存这些信息，以保持状态的一致性和安全性。
+
+### 具体职责和作用包括：
+
+1. **加载安全上下文**：
+   - 在请求开始之前，`SecurityContextPersistenceFilter`从预定义的存储（通常是HTTP Session）中加载`SecurityContext`。
+   - 这个操作确保了一旦用户登录，他们的认证状态（如用户名、角色等信息）可以在整个会话期间保持，并且在每个请求中都可用。
+
+2. **维护请求间的安全状态**：
+   - 通过在请求处理的开始加载并在结束后保存`SecurityContext`，该过滤器帮助维护了用户的安全状态，这对于无状态的HTTP协议来说尤其重要。
+   - 这种机制支持了基于会话的用户认证状态的持久化，避免了每次请求都需要重新认证的不便。
+
+3. **清理安全上下文**：
+   - 请求处理完成后，过滤器将清除线程局部变量中的`SecurityContext`，这是为了防止后续请求错误地使用先前请求的用户认证信息。
+   - 这个清理操作是保护用户会话不被其他用户或其他请求误用的重要安全措施。
+
+4. **安全上下文的保存**：
+   - 在请求结束时，如果`SecurityContext`被更新（如用户的权限信息在请求期间被修改），过滤器会将更新后的`SecurityContext`保存回其存储位置。
+
+### 为何重要？
+- **保护用户数据**：通过确保每个请求都能访问到正确的用户认证信息，而这些信息在请求结束时又被清除，`SecurityContextPersistenceFilter`有效地保护了用户数据不被后续的请求误用。
+- **支持无状态交互**：尽管HTTP是无状态的，但该过滤器允许Spring Security在用户会话中维护状态，从而支持复杂的安全交互，而无需重新认证。
+
+这个过滤器是连接用户会话安全状态和每个请求处理的桥梁，是确保Spring Security能够在Web应用中平滑、安全运作的关键组件。

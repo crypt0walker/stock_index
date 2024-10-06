@@ -1,6 +1,7 @@
 package com.async.stock.config;
 
 import com.async.stock.pojo.domain.StockInfoConfig;
+import com.async.stock.pojo.domain.TaskThreadPoolInfo;
 import com.async.stock.utils.IdWorker;
 
 import com.github.benmanes.caffeine.cache.Cache;
@@ -17,7 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * @Description 定义公共配置类
  */
 @Configuration
-@EnableConfigurationProperties(StockInfoConfig.class)
+@EnableConfigurationProperties({StockInfoConfig.class,TaskThreadPoolInfo.class})
 public class CommonConfig {
     /**
      * 密码加密器

@@ -89,4 +89,6 @@ public interface StockRtInfoMapper {
      * @param stockRtInfoList
      */
     int insertBatch(List<StockRtInfo> stockRtInfoList);
+
+    List<String> getAllStockIds();
 }

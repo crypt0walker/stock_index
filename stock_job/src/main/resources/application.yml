@@ -9,12 +9,6 @@ logging:
     org.springframework.http.converter: DEBUG
 
 spring:
-  rabbitmq:
-    host: 192.168.22.132 # rabbitMQ的ip地址
-    port: 5672 # 端口
-    username: async
-    password: root
-    virtual-host: /
   # 配置mysql数据源，使用Druid数据库连接池
   datasource:
     druid:
@@ -37,7 +31,7 @@ spring:
       maxWait: 60000
   # spring中激活其它配置类
   profiles:
-    active: cache,stock # 激活|加载其它配置资源
+    active: cache,stock,xxljob,mq # 激活|加载其它配置资源
 # 配置mybatis
 mybatis:
   # 扫描并注册指定包下的所有别名，简化在 XML 映射文件中引用类的方式

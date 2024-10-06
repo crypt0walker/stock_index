@@ -1,0 +1,35 @@
+# 服务器端口配置
+#server:(主配置已经有)
+#  port: 8081
+
+# Spring框架的web环境设置，此处禁用web环境
+spring:
+  main:
+    web-environment: false
+
+# 日志配置路径
+logging:
+  config: classpath:logback.xml
+
+# XXL-Job的相关配置
+xxl:
+  job:
+    # XXL-Job管理员控制台的地址
+    admin:
+      addresses: http://192.168.22.132:8093/xxl-job-admin
+    # XXL-Job的访问令牌，如果不使用则为空
+    accessToken: ""
+    # 执行器配置
+    executor:
+      # 执行器的应用名称
+      appname: async-test
+      # 执行器的注册地址，默认使用此地址进行注册，如果为空则使用ip:port
+      address:
+      # 执行器的IP地址，如果注册地址为空，则需要此项
+      ip:
+      # 执行器的端口号
+      port: 7979
+      # 执行器日志路径
+      logpath: /data/applogs/xxl-job/jobhandler
+      # 日志保留天数
+      logretentiondays: 30
