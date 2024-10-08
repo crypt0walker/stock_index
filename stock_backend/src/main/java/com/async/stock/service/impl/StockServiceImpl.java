@@ -28,8 +28,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * @author : itheima
- * @date : 2022/9/20 17:34
+ * @author : async
+ * @date : 2024/10/08 17:34
  * @description : 定义股票查询实现
  */
 @Service

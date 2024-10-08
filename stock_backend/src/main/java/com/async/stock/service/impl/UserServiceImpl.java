@@ -2,7 +2,6 @@ package com.async.stock.service.impl;
 
 import cn.hutool.captcha.CaptchaUtil;
 import cn.hutool.captcha.LineCaptcha;
-import com.alibaba.druid.filter.logging.Log4j2Filter;
 import com.async.stock.constant.StockConstant;
 import com.async.stock.mapper.SysUserMapper;
 import com.async.stock.pojo.entity.SysUser;
@@ -12,16 +11,13 @@ import com.async.stock.vo.req.LoginReqVo;
 import com.async.stock.vo.resp.LoginRespVo;
 import com.async.stock.vo.resp.R;
 import com.async.stock.vo.resp.ResponseCode;
-import com.google.common.base.Strings;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.web.bind.annotation.GetMapping;
 
 import java.awt.*;
 import java.util.HashMap;

@@ -183,6 +183,7 @@
                 <artifactId>sharding-jdbc-spring-boot-starter</artifactId>
                 <version>${sharding-jdbc.version}</version>
             </dependency>
+
             <!--knife4j的依赖-->
 <!--            <dependency>-->
 <!--                <groupId>com.github.xiaoymin</groupId>-->

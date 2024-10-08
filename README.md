@@ -11,7 +11,7 @@
 - 利用Spring Boot、Spring MVC、MyBatis、Swagger、hutool、RestTemplate等工具构建完整的基于控制层、服务层、持久层的三层业务模型
 - 利用Java多线程并发分片获取采集个股流水数据提高数据采集效率，避免主线程占用问题
 - 利用Rabbit MQ同步最新股票数据，避免每次数据交互都需要与MySQL交互，降低数据负载
-- 利用ShardingSphere对股票数据按年份月份进行分库分表，以解决……
+- 利用Sharding JDBC对股票数据按年份月份进行分库分表，以解决……
 - 利用Redis、caffeinecache实现二层缓存机制
 - 利用JWT实现安全的无状态登录，解决cookies-session登录机制……问题
 - 利用spring security实现用户认证鉴权问题，解决
@@ -11068,6 +11068,7 @@ protected void configure(HttpSecurity http) throws Exception {
 `@PostAuthorize` 允许访问方法返回的对象，你可以根据返回的结果来决定是否授权。这种方式适合于操作完成后，需要根据操作结果来进行安全校验的场景。
 
 **示例：**
+
 ```java
 @PostAuthorize("returnObject.owner == authentication.name")
 public Document getDocument(Long id) {
@@ -11080,6 +11081,7 @@ public Document getDocument(Long id) {
 在某些情况下，你可能需要根据方法的执行结果来进行一些后续的安全日志记录或者执行一些安全相关的操作。
 
 **示例：**
+
 ```java
 @PostAuthorize("hasRole('ADMIN') or returnObject.type == 'PUBLIC'")
 public File getFile(Long id) {
@@ -11477,7 +11479,25 @@ public Authentication attemptAuthentication(HttpServletRequest request, HttpServ
 
 这个过滤器是连接用户会话安全状态和每个请求处理的桥梁，是确保Spring Security能够在Web应用中平滑、安全运作的关键组件。
 
-# 二十二、Spring Security项目整合
+
+
+# 二十二、Spring Security自定义Filter
+
+
+
+
+
+# 二十三、Spring Security项目整合
+
+
+
+
+
+# 二十四、Spring Cache
+
+
+
+# 二十五、项目Nginx部署
 
 
 

@@ -8,14 +8,12 @@ import com.async.stock.vo.resp.R;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiImplicitParam;
 import io.swagger.annotations.ApiOperation;
-import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+
 //swagger对类的注解，描述类作用
 @Api(value = "用户认证相关接口定义",tags = "用户功能-用户登录功能")
 @RestController // @RestController 表示该类的所有方法返回的数据都会直接写入 HTTP 响应体中，而不是返回视图。
