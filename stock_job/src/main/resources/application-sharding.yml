@@ -1,0 +1,94 @@
+spring:
+  shardingsphere:
+    datasource:
+      # 定义数据源名称列表，多个数据源以逗号分隔
+      names: df,ds-2021,ds-2022,ds-2023
+      # 定义具体的数据源配置
+      ds-2021:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类名称
+        driver-class-name: com.mysql.jdbc.Driver    # 数据库驱动类名（注意：最新的驱动类名是com.mysql.cj.jdbc.Driver）
+        url: jdbc:mysql://192.168.22.132:3306/stock_db_2021?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      ds-2022:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类名称
+        driver-class-name: com.mysql.jdbc.Driver    # 数据库驱动类名（注意：最新的驱动类名是com.mysql.cj.jdbc.Driver）
+        url: jdbc:mysql://192.168.22.132:3306/stock_db_2022?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      ds-2023:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类名称
+        driver-class-name: com.mysql.jdbc.Driver    # 数据库驱动类名（注意：最新的驱动类名是com.mysql.cj.jdbc.Driver）
+        url: jdbc:mysql://192.168.22.132:3306/stock_db_2023?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
+      df:
+        # 数据库连接池的类名，这里使用阿里巴巴的Druid
+        type: com.alibaba.druid.pool.DruidDataSource
+        # 数据库驱动类名
+        driver-class-name: com.mysql.jdbc.Driver
+        # 数据库连接URL
+        url: jdbc:mysql://192.168.22.132:3306/stock_sys_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+        # 数据库连接用户名
+        username: root
+        # 数据库连接密码
+        password: root
+    # 配置默认数据源名称
+    sharding:
+      default-data-source-name: df
+      broadcast-tables: stock_business
+    # 定义分片策略和实际数据节点
+      tables:
+        stock_block_rt_info:
+          # 定义实际数据节点，${2021..2023} 表示包括 ds-2021 ds-2022 ds-2023这两个数据源
+          actual-data-nodes: ds-${2021..2023}.stock_block_rt_info
+          database-strategy:
+            standard:
+              sharding-column: cur_time
+              precise-algorithm-class-name: ${common.algorithm4db}
+              range-algorithm-class-name: ${common.algorithm4db}
+        stock_market_index_info:
+          actual-data-nodes: ds-${2021..2023}.stock_market_index_info
+          database-strategy:
+            standard:
+              sharding-column: cur_time
+              precise-algorithm-class-name: ${common.algorithm4db}
+              range-algorithm-class-name: ${common.algorithm4db}
+        stock_outer_market_index_info:
+          actual-data-nodes: ds-${2021..2023}.stock_outer_market_index_info
+          database-strategy:
+            standard:
+              sharding-column: cur_time
+              precise-algorithm-class-name: ${common.algorithm4db}
+              range-algorithm-class-name: ${common.algorithm4db}
+        stock_rt_info:
+          # 定义实际数据节点，按月分表，例如 ds-2021.stock_rt_info_202101 到 ds-2021.stock_rt_info_202112
+          actual-data-nodes: >
+            ds-2021.stock_rt_info_${202101..202112},
+            ds-2022.stock_rt_info_${202201..202212},
+            ds-2023.stock_rt_info_${202301..202312}
+          # 配置数据库分片策略
+          database-strategy:
+            standard:
+              sharding-column: cur_time  # 定义分片列
+              # 指定精确分片算法类，处理等于和 IN 条件的分片
+              precise-algorithm-class-name: ${common.algorithm4db}
+              # 指定范围分片算法类，处理 BETWEEN 条件的分片，可选
+              range-algorithm-class-name: ${common.algorithm4db}
+          # 配置表分片策略
+          table-strategy:
+            standard:
+              sharding-column: cur_time  # 定义分表的分片列
+              # 指定精确分表算法类，处理等于和 IN 条件的分表
+              precise-algorithm-class-name: ${common.algorithm4StockRtInfoTable}
+              # 指定范围分表算法类，处理 BETWEEN 条件的分表，可选
+              range-algorithm-class-name: ${common.algorithm4StockRtInfoTable}
+    # 配置项
+    props:
+      sql:
+        # 是否显示SQL语句，用于调试，默认值为false
+        show: true
+# 提取公共数据库分片算法配置类
+common:
+  algorithm4db: com.async.stock.sharding.CommonShardingAlgorithm4Db
+  algorithm4StockRtInfoTable: com.async.stock.sharding.ShardingAlgorithm4StockRtInfoTable

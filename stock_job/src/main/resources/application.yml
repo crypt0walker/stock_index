@@ -10,28 +10,28 @@ logging:
 
 spring:
   # 配置mysql数据源，使用Druid数据库连接池
-  datasource:
-    druid:
-      # 数据库用户名
-      username: root
-      # 数据库密码
-      password: root
-      # MySQL 数据库连接URL，包含数据库地址、端口、数据库名称及其他连接参数
-      url: jdbc:mysql://192.168.22.132:3306/stock_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
-      # 数据库驱动类，MySQL 的 JDBC 驱动
-      driver-class-name: com.mysql.jdbc.Driver
-      # 初始化时建立物理连接的个数。初始化发生在显示调用 init 方法，或者第一次 getConnection 时
-      initialSize: 6
-      # 最小连接池数量
-      minIdle: 2
-      # 最大连接池数量，表示同时最大连接数
-      maxActive: 20
-      # 获取连接时最大等待时间，单位毫秒。配置了 maxWait 之后，缺省启用公平锁，
-      # 并发效率会有所下降，如果需要可以通过配置 useUnfairLock 属性为 true 使用非公平锁
-      maxWait: 60000
+#  datasource:
+#    druid:
+#      # 数据库用户名
+#      username: root
+#      # 数据库密码
+#      password: root
+#      # MySQL 数据库连接URL，包含数据库地址、端口、数据库名称及其他连接参数
+#      url: jdbc:mysql://192.168.22.132:3306/stock_db?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai
+#      # 数据库驱动类，MySQL 的 JDBC 驱动
+#      driver-class-name: com.mysql.jdbc.Driver
+#      # 初始化时建立物理连接的个数。初始化发生在显示调用 init 方法，或者第一次 getConnection 时
+#      initialSize: 6
+#      # 最小连接池数量
+#      minIdle: 2
+#      # 最大连接池数量，表示同时最大连接数
+#      maxActive: 20
+#      # 获取连接时最大等待时间，单位毫秒。配置了 maxWait 之后，缺省启用公平锁，
+#      # 并发效率会有所下降，如果需要可以通过配置 useUnfairLock 属性为 true 使用非公平锁
+#      maxWait: 60000
   # spring中激活其它配置类
   profiles:
-    active: cache,stock,xxljob,mq # 激活|加载其它配置资源
+    active: cache,stock,xxljob,mq,sharding # 激活|加载其它配置资源
 # 配置mybatis
 mybatis:
   # 扫描并注册指定包下的所有别名，简化在 XML 映射文件中引用类的方式

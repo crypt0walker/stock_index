@@ -91,4 +91,5 @@ public interface StockRtInfoMapper {
     int insertBatch(List<StockRtInfo> stockRtInfoList);
 
     List<String> getAllStockIds();
+
 }
