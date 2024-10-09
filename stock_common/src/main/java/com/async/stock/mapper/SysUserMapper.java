@@ -1,7 +1,10 @@
 package com.async.stock.mapper;
 
+import com.async.stock.pojo.domain.UserPageListInfoDomain;
 import com.async.stock.pojo.entity.SysUser;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
 * @author 16232
@@ -32,5 +35,16 @@ public interface SysUserMapper {
      * @return 返回用户对象
      */
     SysUser findByUserName(@Param("username") String username);
+    //根据名字查询用户
+    SysUser findUserInfoByName(@Param("userName") String userName);
 
+
+    List<UserPageListInfoDomain> findUserAllInfoByPage(@Param("userName") String username, @Param("nickName") String nickName, @Param("startTime") String startTime, @Param("endTime") String endTime);
+
+    /**
+     * 逻辑删除用户信息，就是将delete变成为0
+     * @param ids
+     * @return
+     */
+    int updateStatusForDelete(@Param("ids") List<Long> ids);
 }

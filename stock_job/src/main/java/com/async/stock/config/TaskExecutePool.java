@@ -1,6 +1,6 @@
 package com.async.stock.config;
 
-import com.async.stock.pojo.domain.TaskThreadPoolInfo;
+import com.async.stock.pojo.vo.TaskThreadPoolInfo;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

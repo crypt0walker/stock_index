@@ -11503,3 +11503,146 @@ public Authentication attemptAuthentication(HttpServletRequest request, HttpServ
 
 
 
+# 项目过程中遇到的问题
+
+## 1. 数据库唯一约束冲突以及分片带来的不支持 `ON DUPLICATE KEY UPDATE` 
+
+### 1.1 问题的起因：数据库唯一约束冲突问题
+
+在我进行分片数据库的开发过程中，遇到了一个较为常见但关键的数据库错误：`MySQLIntegrityConstraintViolationException`，这个错误是由于违反了数据库表中的唯一约束（`unique_code_time`）条件所引发的。错误信息明确指出，在插入数据时，数据库中已经存在一条记录，包含相同的 `cur_time` 和 `stock_code`，这导致了重复条目的插入尝试。
+
+#### 1.1.1 问题的背景与最初的解决方案
+
+在项目开始时，我们的业务需求要求我们在数据库中插入新的股票实时数据。为确保数据的一致性和避免重复数据，我们在表中定义了一个唯一键（`unique_code_time`），用于约束 `stock_code` 和 `cur_time` 的组合。这个设计在数据库中帮助我们防止重复的数据插入。
+
+为了应对可能的重复插入场景，我最初采用了 MySQL 的 `ON DUPLICATE KEY UPDATE` 语法。该语法允许在尝试插入记录时，如果违反唯一键约束，它不会抛出异常，而是执行更新操作，确保数据库中的记录保持最新。具体的 SQL 语句如下所示：
+
+```sql
+INSERT INTO stock_rt_info (stock_code, cur_time, price) 
+VALUES (?, ?, ?) 
+ON DUPLICATE KEY UPDATE price = VALUES(price);
+```
+
+这个策略在单库的场景下表现良好，不仅简化了代码逻辑，还有效避免了重复插入的风险。
+
+#### 1.1.2 引入 ShardingSphere 并遇到的问题
+
+随着数据量的增长和业务需求的变化，我们引入了分布式数据库解决方案，使用 ShardingSphere 进行数据库分片管理。然而，ShardingSphere 并不支持 `ON DUPLICATE KEY UPDATE` 语法在分片键上的使用。分片键的设计在 ShardingSphere 中用于将数据分散到不同的物理节点上，然而 `ON DUPLICATE KEY UPDATE` 语法中的逻辑会造成复杂的 SQL 解析和分片键的约束管理问题。因此，当我们尝试继续使用这段 SQL 时，系统抛出了不支持该语法的错误。
+
+#### 1.1.3 根本原因分析
+
+问题的根本原因在于 ShardingSphere 的 SQL 解析引擎无法正确处理分片键上的 `ON DUPLICATE KEY UPDATE` 语法。当插入操作与分片键的唯一约束相冲突时，ShardingSphere 无法像单库那样简便地执行更新操作。因此，当多个请求同时插入具有相同分片键的记录时，数据库违反了唯一键约束，导致 `MySQLIntegrityConstraintViolationException` 错误。
+
+#### 1.1.4 解决方案：拆分 `INSERT` 和 `UPDATE` 操作
+
+为了解决这个问题，我不得不调整原有的逻辑，拆分 `INSERT` 和 `UPDATE` 操作。具体做法如下：
+
+1. **首先检查记录是否存在**：
+   我们先通过 `SELECT` 语句检查数据库中是否已经存在相同 `stock_code` 和 `cur_time` 的记录。
+
+   ```sql
+   SELECT COUNT(1) 
+   FROM stock_rt_info 
+   WHERE stock_code = ? AND cur_time = ?;
+   ```
+
+2. **插入或更新记录**：
+   - 如果查询结果返回为 0，说明记录不存在，执行 `INSERT` 操作：
+   
+     ```sql
+     INSERT INTO stock_rt_info (stock_code, cur_time, price) 
+     VALUES (?, ?, ?);
+     ```
+   - 如果查询结果大于 0，说明记录已经存在，执行 `UPDATE` 操作：
+   
+     ```sql
+     UPDATE stock_rt_info 
+     SET price = ? 
+     WHERE stock_code = ? AND cur_time = ?;
+     ```
+
+通过这种方式，我们能够手动控制数据库的插入和更新，绕过 ShardingSphere 对 `ON DUPLICATE KEY UPDATE` 语法的不支持问题。
+
+#### 1.1.5 最终实现的效果
+
+这种分步处理方式虽然增加了代码的复杂度，但确保了在分片数据库中数据的准确性和一致性。在后续的项目中，我们可以将这套逻辑封装到服务层中，提供统一的接口，降低代码维护的复杂度。对于分布式数据库的操作，特别是涉及分片键的部分，合理的操作顺序和逻辑处理显得尤为重要。
+
+
+
+好的，让我进一步解释 ShardingSphere 不支持 `ON DUPLICATE KEY UPDATE` 的原理，以及如何绕过这一问题的核心原因。
+
+### 1.2 ShardingSphere 不支持 `ON DUPLICATE KEY UPDATE` 的根本原因
+
+#### 1.2.1 **SQL 路由和分片机制的限制**
+ShardingSphere 的核心功能之一是将数据进行水平分片，它基于某些特定的分片键（`cur_time`）将数据分布到不同的物理数据库节点中。在执行 SQL 时，ShardingSphere 会根据这些分片键将查询请求路由到相应的分片（即数据库节点）上。
+
+`ON DUPLICATE KEY UPDATE` 是一种复合语法，它结合了**插入**和**更新**两种操作。其逻辑是：如果唯一键冲突（即数据已存在），则执行更新操作，否则执行插入操作。
+
+- **问题的复杂性**：在分片数据库中，`ON DUPLICATE KEY UPDATE` 涉及的插入和更新操作可能作用于不同的分片。在执行该语句时，ShardingSphere 首先需要确定数据应该插入到哪个分片。如果插入的记录触发了唯一键冲突，ShardingSphere 还需要找到存在冲突记录的分片，然后执行更新操作。这会导致多个分片节点间的数据同步问题，尤其在分布式系统中，这类操作可能会引发一致性问题。
+
+- **分片键与唯一键的冲突**：如果唯一键涉及多个字段（`cur_time`），其中可能有一个或多个字段作为分片键，而分片键用于确定数据的存储位置。当 `ON DUPLICATE KEY UPDATE` 触发冲突时，ShardingSphere 无法在分布式环境下保证高效的分片数据一致更新。因此，ShardingSphere 为了避免这种复杂的多分片操作，不支持在分片键上使用这种复合 SQL。
+
+#### 1.2.2 **分布式环境下的一致性问题**
+在分布式数据库中，多个数据库节点存储不同的分片数据。假设我们使用 `ON DUPLICATE KEY UPDATE` 操作：
+- 首先要在某个分片插入数据，如果插入的记录与已有数据发生冲突，系统需要确定冲突的数据所在的分片，并在该分片上进行更新。
+- 然而，分布式数据库面临的主要挑战之一是数据一致性问题。当多个节点之间的操作无法及时同步时，可能会导致并发冲突或者数据的不一致性。在分布式数据库中，`ON DUPLICATE KEY UPDATE` 需要保证在所有分片上都执行成功，才能保持数据的一致性，而这在实际操作中是很难实现的。
+
+ShardingSphere 基于以上原因，选择不支持这种复杂的语法操作，以避免数据分片不一致、分片路由复杂等问题。
+
+### 1.3 解决方案：拆分 `INSERT` 和 `UPDATE` 操作
+
+既然 ShardingSphere 无法处理 `ON DUPLICATE KEY UPDATE` 的复杂场景，我们可以通过**显式地拆分插入和更新**来解决问题。
+
+1. **查询是否存在记录**：首先，通过 `SELECT` 查询确定数据库中是否已经存在相同的记录（即相同的 `stock_code` 和 `cur_time` 组合）。
+
+   ```sql
+   SELECT COUNT(1) 
+   FROM stock_rt_info 
+   WHERE stock_code = ? AND cur_time = ?;
+   ```
+
+   这样做的好处是，ShardingSphere 可以基于查询的分片键，直接将查询路由到相应的分片执行，不涉及跨分片的操作。
+
+2. **根据查询结果执行插入或更新**：
+   - 如果查询结果返回为 0，表示记录不存在，我们执行 `INSERT` 操作：
+
+     ```sql
+     INSERT INTO stock_rt_info (stock_code, cur_time, price) 
+     VALUES (?, ?, ?);
+     ```
+
+   - 如果查询结果返回大于 0，表示记录已经存在，我们执行 `UPDATE` 操作：
+
+     ```sql
+     UPDATE stock_rt_info 
+     SET price = ? 
+     WHERE stock_code = ? AND cur_time = ?;
+     ```
+
+通过这种方式，我们将复杂的 `ON DUPLICATE KEY UPDATE` 操作显式地拆分为简单的查询、插入和更新操作，这些操作可以在分片数据库环境下被 ShardingSphere 正确路由和处理，从而避免了唯一键冲突带来的问题。
+
+### 1.4 为什么要进行跨分片检查？
+
+1. **分片机制的原理**：在 ShardingSphere 中，分片是基于某个分片键（在你的例子中是 `cur_time`）来进行的。也就是说，具有相同 `cur_time` 的数据都会被路由到同一个分片中。例如，假如 `cur_time = '2024-10-09 12:00:00'`，那么所有带有这个 `cur_time` 值的记录都会被存储在同一个分片中。
+
+2. **跨分片的唯一约束问题**：当你有一个联合唯一约束（如 `stock_code` 和 `cur_time`）时，ShardingSphere 只会在当前分片检查是否违反了唯一约束，无法跨分片进行检查。例如：
+   - 你在 `分片A` 中插入了 `stock_code = 'A001'` 和 `cur_time = '2024-10-09 12:00:00'` 的一条记录。
+   - 后来你在 `分片B` 中插入一条 `cur_time = '2024-10-09 12:01:00'` 的记录，而 `stock_code = 'A001'` 是相同的。
+   
+   在这种情况下，由于 `cur_time` 是分片键，这两条记录分别位于不同的分片，但它们的 `stock_code` 是相同的。如果你的唯一约束是针对 `stock_code` 和 `cur_time` 的组合，理论上 ShardingSphere 需要在所有分片上检查是否有相同的 `stock_code`，但是 ShardingSphere 只能在插入的分片上进行唯一性检查，而不会去检查其他分片。因此，在这种情况下，跨分片的唯一性无法得到保证。
+
+3. **跨分片检查的局限性**：唯一性约束是 `stock_code` 和 `cur_time` 的联合条件，尽管 `cur_time` 可以确保记录路由到特定分片，但 ShardingSphere 无法跨多个分片检查 `stock_code` 是否已经存在于其他分片。如果有一条相同 `stock_code` 的记录在另一个分片中（但 `cur_time` 不同），ShardingSphere 不会自动跨分片进行检查。这就导致了分片之间唯一性约束无法得到全局保证，可能出现唯一约束违反的情况。
+
+4. **为什么 `ON DUPLICATE KEY UPDATE` 不适用**：`ON DUPLICATE KEY UPDATE` 的本质是让数据库在检测到主键或唯一键冲突时自动执行更新操作，但由于 ShardingSphere 只在当前分片检查数据，无法全局检测跨分片的数据是否存在冲突，因此无法在这种场景中使用 `ON DUPLICATE KEY UPDATE`。如果某个分片内没有冲突，ShardingSphere 可能会认为插入操作是合法的，而不会意识到其他分片中可能存在相同的 `stock_code`，从而导致唯一性约束被违反。
+
+因此，跨分片时无法实现全局的唯一性检查，导致无法使用 `ON DUPLICATE KEY UPDATE`。
+
+### 1.5 为什么选择这种方案
+
+- **避免跨分片操作**：我们通过先查询后插入/更新的方式，避免了 `ON DUPLICATE KEY UPDATE` 可能引发的跨分片数据同步问题，确保每次操作只在一个分片上执行，从而保证了数据一致性。
+  
+- **提高代码的可读性和维护性**：显式拆分的逻辑使代码更为直观清晰，每个操作的目的明确（查询是否存在、插入新数据或更新已有数据）。同时，这种方案在面对分布式环境下的扩展性时，也更加灵活。
+
+### 1.6 总结
+
+ShardingSphere 之所以不支持 `ON DUPLICATE KEY UPDATE` 语法，主要是由于分片路由和分布式环境下的数据一致性问题。通过将 `INSERT` 和 `UPDATE` 操作拆分为显式的查询、插入和更新步骤，我们可以有效解决这一问题，避免违反唯一约束的错误，并确保分布式系统中数据的一致性。在实际项目中，这种显式拆分方案是应对 ShardingSphere 限制的有效方法，也为项目开发提供了更稳定的基础。

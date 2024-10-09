@@ -26,6 +26,24 @@
         from sys_role
         where  id = #{id,jdbcType=BIGINT} 
     </select>
+    <select id="findAllInfo" resultType="com.async.stock.pojo.entity.SysRole">
+        select <include refid="Base_Column_List" /> from sys_role where  deleted =1
+    </select>
+    <select id="findAllRoleInfo" resultType="com.async.stock.pojo.entity.SysRole">
+        select
+        <include refid="Base_Column_List" />
+        from sys_role
+    </select>
+    <select id="getRoleByUserId" resultType="com.async.stock.pojo.entity.SysRole">
+        SELECT
+            r.*
+        FROM
+            sys_user_role AS ur,
+            sys_role AS r
+        WHERE
+            ur.role_id = r.id
+          AND ur.user_id = #{id}
+    </select>
 
     <delete id="deleteByPrimaryKey" parameterType="java.lang.Long">
         delete from sys_role

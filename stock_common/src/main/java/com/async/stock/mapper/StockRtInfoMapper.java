@@ -8,6 +8,7 @@ import com.async.stock.pojo.entity.StockRtInfo;
 import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
 
+import java.sql.Timestamp;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -36,7 +37,29 @@ public interface StockRtInfoMapper {
 
     List<StockUpdownDomain> getNewestStockUpDownInfos(Date lastDate);
 
+    /**
+     * 检查某个 stock_code 和 cur_time 是否已经存在
+     * @param stockCode 股票代码
+     * @param curTime 当前时间
+     * @return 如果存在返回1，否则返回0
+     */
+    int checkIfExists(@Param("stockCode") String stockCode, @Param("curTime") Date curTime);
 
+    /**
+     * 插入股票实时数据
+     *
+     * @param info 股票实时信息对象
+     * @return
+     */
+    int insertData(StockRtInfo info);
+
+    /**
+     * 更新股票实时数据
+     *
+     * @param info 股票实时信息对象
+     * @return
+     */
+    int updateData(StockRtInfo info);
 
     /**
      * 根据指定的时间点查询股票数据
@@ -92,4 +115,10 @@ public interface StockRtInfoMapper {
 
     List<String> getAllStockIds();
 
+    /**
+     * 批量插入个股数据
+     * @param list
+     * @return
+     */
+    int insertAllData(@Param("list") List<StockRtInfo> list);
 }

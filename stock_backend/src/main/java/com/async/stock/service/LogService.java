@@ -7,9 +7,9 @@ import com.async.stock.vo.resp.R;
 import java.util.List;
 
 /**
- * @author by async
- * @Date 2021/12/23
- * @Description 操纵日志服务接口
+ * @author daocaoaren
+ * @date 2024/7/23 20:53
+ * @description :
  */
 public interface LogService {
     /**

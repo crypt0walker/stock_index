@@ -5,6 +5,7 @@ import com.async.stock.pojo.entity.StockMarketIndexInfo;
 import org.apache.ibatis.annotations.MapKey;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -57,5 +58,9 @@ public interface StockMarketIndexInfoMapper {
      */
     int insertBatch(List<StockMarketIndexInfo> infos);
 
-
+    /**
+     * 批量插入最新挖掘的股票大盘数据
+     * @param list 封装成list集合了
+     */
+    int insertSelectData(@Param("list") ArrayList<StockMarketIndexInfo> list);
 }

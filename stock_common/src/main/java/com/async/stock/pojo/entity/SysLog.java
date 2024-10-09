@@ -2,12 +2,15 @@ package com.async.stock.pojo.entity;
 
 import java.io.Serializable;
 import java.util.Date;
+
+import lombok.Builder;
 import lombok.Data;
 
 /**
  * 系统日志
  * @TableName sys_log
  */
+@Builder
 @Data
 public class SysLog implements Serializable {
     /**

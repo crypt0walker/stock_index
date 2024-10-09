@@ -2,7 +2,7 @@ spring:
   shardingsphere:
     datasource:
       # 定义数据源名称列表，多个数据源以逗号分隔
-      names: df,ds-2021,ds-2022,ds-2023
+      names: df,ds-2021,ds-2022,ds-2023,ds-2024
       # 定义具体的数据源配置
       ds-2021:
         type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类名称
@@ -22,6 +22,12 @@ spring:
         url: jdbc:mysql://192.168.22.132:3306/stock_db_2023?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库URL
         username: root  # 数据库用户名
         password: root  # 数据库密码
+      ds-2024:
+        type: com.alibaba.druid.pool.DruidDataSource  # 数据库连接池类名称
+        driver-class-name: com.mysql.jdbc.Driver    # 数据库驱动类名（注意：最新的驱动类名是com.mysql.cj.jdbc.Driver）
+        url: jdbc:mysql://192.168.22.132:3306/stock_db_2024?useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&useSSL=false&serverTimezone=Asia/Shanghai  # 数据库URL
+        username: root  # 数据库用户名
+        password: root  # 数据库密码
       df:
         # 数据库连接池的类名，这里使用阿里巴巴的Druid
         type: com.alibaba.druid.pool.DruidDataSource
@@ -37,25 +43,25 @@ spring:
     sharding:
       default-data-source-name: df
       broadcast-tables: stock_business
-    # 定义分片策略和实际数据节点
+      # 定义分片策略和实际数据节点
       tables:
         stock_block_rt_info:
           # 定义实际数据节点，${2021..2023} 表示包括 ds-2021 ds-2022 ds-2023这两个数据源
-          actual-data-nodes: ds-${2021..2023}.stock_block_rt_info
+          actual-data-nodes: ds-${2021..2024}.stock_block_rt_info
           database-strategy:
             standard:
               sharding-column: cur_time
               precise-algorithm-class-name: ${common.algorithm4db}
               range-algorithm-class-name: ${common.algorithm4db}
         stock_market_index_info:
-          actual-data-nodes: ds-${2021..2023}.stock_market_index_info
+          actual-data-nodes: ds-${2021..2024}.stock_market_index_info
           database-strategy:
             standard:
               sharding-column: cur_time
               precise-algorithm-class-name: ${common.algorithm4db}
               range-algorithm-class-name: ${common.algorithm4db}
         stock_outer_market_index_info:
-          actual-data-nodes: ds-${2021..2023}.stock_outer_market_index_info
+          actual-data-nodes: ds-${2021..2024}.stock_outer_market_index_info
           database-strategy:
             standard:
               sharding-column: cur_time
@@ -66,7 +72,8 @@ spring:
           actual-data-nodes: >
             ds-2021.stock_rt_info_${202101..202112},
             ds-2022.stock_rt_info_${202201..202212},
-            ds-2023.stock_rt_info_${202301..202312}
+            ds-2023.stock_rt_info_${202301..202312},
+            ds-2024.stock_rt_info_${202301..202412}
           # 配置数据库分片策略
           database-strategy:
             standard:

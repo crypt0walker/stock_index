@@ -25,4 +25,6 @@ public interface StockBusinessMapper {
     int updateByPrimaryKey(StockBusiness record);
 
     List<String> getStockIds();
+
+    List<String> getAllStockCode();
 }

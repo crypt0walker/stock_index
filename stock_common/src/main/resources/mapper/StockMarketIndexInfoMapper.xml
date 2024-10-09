@@ -138,6 +138,25 @@
         trade_volume = VALUES(trade_volume),
         trade_amount = VALUES(trade_amount);
     </insert>
+    <insert id="insertSelectData">
+        insert into stock_market_index_info
+        (id, market_code, market_name,
+        pre_close_point, open_point, cur_point,
+        min_point, max_point, trade_amount, trade_volume, cur_time)
+        values
+        <foreach collection="list" item="smi" separator=",">
+            (#{smi.id,jdbcType=BIGINT}, #{smi.marketCode,jdbcType=CHAR}, #{smi.marketName,jdbcType=VARCHAR},
+            #{smi.preClosePoint,jdbcType=DECIMAL}, #{smi.openPoint,jdbcType=DECIMAL}, #{smi.curPoint,jdbcType=DECIMAL},
+            #{smi.minPoint,jdbcType=DECIMAL}, #{smi.maxPoint,jdbcType=DECIMAL}, #{smi.tradeAmount,jdbcType=BIGINT}, #{smi.tradeVolume,jdbcType=DECIMAL}, #{smi.curTime,jdbcType=TIMESTAMP})
+        </foreach>
+        ON DUPLICATE KEY UPDATE
+        cur_point = VALUES(cur_point),
+        min_point = VALUES(min_point),
+        max_point = VALUES(max_point),
+        trade_amount = VALUES(trade_amount),
+        trade_volume = VALUES(trade_volume);
+    </insert>
+
 
     <update id="updateByPrimaryKeySelective" parameterType="com.async.stock.pojo.entity.StockMarketIndexInfo">
         update stock_market_index_info

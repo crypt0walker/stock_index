@@ -1,6 +1,9 @@
 package com.async.stock.mapper;
 
 import com.async.stock.pojo.entity.SysLog;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
 * @author 16232
@@ -22,4 +25,11 @@ public interface SysLogMapper {
 
     int updateByPrimaryKey(SysLog record);
 
+    List<SysLog> findByCondition(@Param("username") String username, @Param("operation") String operation, @Param("startTime") String startTime, @Param("endTime") String endTime);
+
+    /**
+     * 根据角色id批量删除用户信息
+     * @param logIds
+     */
+    void deleteBatchByLogIds(@Param("logIds") List<Long> logIds);
 }

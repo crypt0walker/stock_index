@@ -3,13 +3,12 @@ package com.async.stock.vo.req;
 import lombok.Data;
 
 /**
- * @author by itheima
- * @Date 2021/12/23
- * @Description 更新权限时使用
+ * @author daocaoaren
+ * @date 2024/7/22 23:30
+ * @description :
  */
 @Data
 public class PermissionUpdateVo {
-
     /**
      * 权限id
      */
@@ -21,7 +20,7 @@ public class PermissionUpdateVo {
     private Integer type;
 
     private String title;
-    private String pid;
+    private Long pid;
     /**
      * 对应资源路径
      *  1.如果类型是目录，则url为空

@@ -5,29 +5,15 @@ import lombok.Data;
 import java.util.List;
 
 /**
- * @author by itheima
- * @Date 2021/12/22
- * @Description 角色添加VO
+ * @author daocaoaren
+ * @date 2024/7/22 20:58
+ * @description : 角色信息编辑请求参数表
  */
 @Data
 public class RoleUpdateVo {
-
-    /**
-     * 角色ID
-     */
-    private String id;
-
-    /**
-     * 角色名称
-     */
+    private Long id;
     private String name;
-    /**
-     * 角色描述
-     */
     private String description;
+    private List<Long> permissionsIds;
 
-    /**
-     * 权限ID集合
-     */
-    private List<String> permissionsIds;
 }

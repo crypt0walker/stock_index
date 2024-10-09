@@ -223,6 +223,55 @@
         trade_volume = VALUES(trade_volume),
         cur_time = VALUES(cur_time);
     </insert>
+
+    <!-- 检查数据是否存在 -->
+    <select id="checkIfExists" parameterType="map" resultType="int">
+        SELECT COUNT(1)
+        FROM stock_rt_info
+        WHERE stock_code = #{stockCode}
+          AND cur_time = #{curTime}
+    </select>
+
+    <!-- 插入数据 -->
+    <insert id="insertAllData">
+        insert into stock_rt_info
+        (id, stock_code, stock_name
+        , pre_close_price, open_price, cur_price
+        , min_price, max_price, trade_amount
+        , trade_volume, cur_time)
+        values
+            (#{id,jdbcType=BIGINT}, #{stockCode,jdbcType=CHAR}, #{stockName,jdbcType=VARCHAR}
+            , #{preClosePrice,jdbcType=DECIMAL}, #{openPrice,jdbcType=DECIMAL}, #{curPrice,jdbcType=DECIMAL}
+            , #{minPrice,jdbcType=DECIMAL}, #{maxPrice,jdbcType=DECIMAL}, #{tradeAmount,jdbcType=BIGINT}
+            , #{tradeVolume,jdbcType=DECIMAL}, #{curTime,jdbcType=TIMESTAMP})
+    </insert>
+    <!-- 插入数据 -->
+    <insert id="insertData">
+        insert into stock_rt_info
+        (id, stock_code, stock_name
+        , pre_close_price, open_price, cur_price
+        , min_price, max_price, trade_amount
+        , trade_volume, cur_time)
+        values
+            (#{id,jdbcType=BIGINT}, #{stockCode,jdbcType=CHAR}, #{stockName,jdbcType=VARCHAR}
+            , #{preClosePrice,jdbcType=DECIMAL}, #{openPrice,jdbcType=DECIMAL}, #{curPrice,jdbcType=DECIMAL}
+            , #{minPrice,jdbcType=DECIMAL}, #{maxPrice,jdbcType=DECIMAL}, #{tradeAmount,jdbcType=BIGINT}
+            , #{tradeVolume,jdbcType=DECIMAL}, #{curTime,jdbcType=TIMESTAMP})
+    </insert>
+
+    <!-- 更新数据 -->
+    <update id="updateData">
+        UPDATE stock_rt_info
+        SET cur_price = #{curPrice},
+            min_price = #{minPrice},
+            max_price = #{maxPrice},
+            trade_amount = #{tradeAmount},
+            trade_volume = #{tradeVolume},
+            cur_time = #{curTime}
+        WHERE stock_code = #{stockCode}
+          AND cur_time = #{curTime}
+    </update>
+
     <update id="updateByPrimaryKeySelective" parameterType="com.async.stock.pojo.entity.StockRtInfo">
         update stock_rt_info
         <set>

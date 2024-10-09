@@ -6,6 +6,7 @@ import com.async.stock.mapper.StockBlockRtInfoMapper;
 import com.async.stock.mapper.StockMarketIndexInfoMapper;
 import com.async.stock.mapper.StockRtInfoMapper;
 import com.async.stock.pojo.domain.*;
+import com.async.stock.pojo.vo.StockInfoConfig;
 import com.async.stock.service.StockService;
 import com.async.stock.utils.DateTimeUtil;
 import com.async.stock.vo.resp.PageResult;

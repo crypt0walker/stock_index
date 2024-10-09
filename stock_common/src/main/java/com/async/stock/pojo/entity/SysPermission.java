@@ -2,13 +2,21 @@ package com.async.stock.pojo.entity;
 
 import java.io.Serializable;
 import java.util.Date;
+
+import jdk.nashorn.internal.runtime.Debug;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 权限表（菜单）
  * @TableName sys_permission
  */
+@Builder
 @Data
+@AllArgsConstructor  // 生成一个全参数的构造函数
+@NoArgsConstructor   // 生成一个无参数的构造函数
 public class SysPermission implements Serializable {
     /**
      * 主键
@@ -86,4 +94,5 @@ public class SysPermission implements Serializable {
     private Integer deleted;
 
     private static final long serialVersionUID = 1L;
+
 }

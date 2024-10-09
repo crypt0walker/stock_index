@@ -78,5 +78,7 @@ public interface StockService {
 
     R<List<InnerMarketDomain>> getInnerMarketInfos();
 
+//    void getInnerMarketInfo();
+
 //    R<List<InnerMarketDomain>> getInnnerMarketInfos();
 }

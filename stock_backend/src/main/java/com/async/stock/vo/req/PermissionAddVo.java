@@ -3,9 +3,9 @@ package com.async.stock.vo.req;
 import lombok.Data;
 
 /**
- * @author by itheima
- * @Date 2021/12/23
- * @Description
+ * @author daocaoaren
+ * @date 2024/7/22 22:30
+ * @description : 权限添加的请求参数
  */
 @Data
 public class PermissionAddVo {
@@ -15,7 +15,7 @@ public class PermissionAddVo {
     private Integer type;
 
     private String title;
-    private String pid;
+    private Long pid;
     /**
      * 对应资源路径
      *  1.如果类型是目录，则url为空

@@ -3,72 +3,72 @@ package com.async.stock.service;
 import com.async.stock.pojo.entity.SysPermission;
 import com.async.stock.vo.req.PermissionAddVo;
 import com.async.stock.vo.req.PermissionUpdateVo;
-import com.async.stock.vo.resp.PermissionRespNodeTreeVo;
-import com.async.stock.vo.resp.PermissionRespNodeVo;
+import com.async.stock.vo.resp.LoginRespPermission;
+import com.async.stock.vo.resp.PermissionTreeNodeVo;
 import com.async.stock.vo.resp.R;
-import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * @author async
- * @version 1.0
+ * @author daocaoaren
+ * @date 2024/7/21 23:48
+ * @description :
  */
 public interface PermissionService {
-    R<List<PermissionRespNodeVo>> selectAllTree();
 
     /**
-     * 查询所有权限集合
-     *
+     * 根据用户id查询用户的所有权限
+     * @param id 用户id
      * @return
      */
-    R<List<SysPermission>> getAll();
+    List<SysPermission> findPermissionsByUserId(Long id);
+
 
     /**
-     * 添加权限时，回显权限树
-     *
+     * @param permissions 权限树状集合
+     * @param pid 权限父id，顶级权限的pid默认为0
+     * @param isOnlyMenuType true:遍历到菜单，  false:遍历到按钮
+     * type: 目录1 菜单2 按钮3
      * @return
      */
-    R<List<PermissionRespNodeTreeVo>> getAllPermissionTreeExBt();
+    List<LoginRespPermission> getTree(List<SysPermission> permissions, long pid, boolean isOnlyMenuType);
 
     /**
-     * 权限添加按钮
-     *
+     * 获取树状权限集合
+     * @return
+     */
+    R<List<LoginRespPermission>> selectAllPermissions();
+
+    /**
+     * 获取所有权限的全部信息
+     * @return
+     */
+    R<List<SysPermission>> getAllPermissions();
+
+    /**
+     * 添加权限时回显权限树,仅仅显示目录和菜单
+     * @return
+     */
+    R<List<PermissionTreeNodeVo>> getPermissionsTree();
+
+    /**
+     * 添加权限按钮
      * @param vo
      * @return
      */
     R<String> addPermission(PermissionAddVo vo);
 
     /**
-     * 更新权限
-     *
+     * 修改权限按钮
      * @param vo
      * @return
      */
     R<String> updatePermission(PermissionUpdateVo vo);
 
     /**
-     * 根据权限id删除权限操作（逻辑删除）
-     *
+     * 删除权限按钮菜单
      * @param permissionId
      * @return
      */
-    R<String> removePermission(String permissionId);
-
-    /**
-     * 根据用户id查询用户信息
-     *
-     * @param userId
-     * @return
-     */
-    List<SysPermission> getPermissionByUserId(@Param("userId") String userId);
-
-    /**
-     * @param permissions    权限树状集合
-     * @param pid            权限父id，顶级权限的pid默认为0
-     * @param isOnlyMenuType true:遍历到菜单，  false:遍历到按钮
-     *                       type: 目录1 菜单2 按钮3
-     * @return
-     */
-    List<PermissionRespNodeVo> getTree(List<SysPermission> permissions, String pid, boolean isOnlyMenuType);
+    R<String> deletePermission(Long permissionId);
 }

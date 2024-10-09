@@ -1,6 +1,9 @@
 package com.async.stock.mapper;
 
 import com.async.stock.pojo.entity.SysRole;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
 * @author 16232
@@ -21,5 +24,23 @@ public interface SysRoleMapper {
     int updateByPrimaryKeySelective(SysRole record);
 
     int updateByPrimaryKey(SysRole record);
+    /**
+     * 查所有存在的角色信息
+     * @return
+     */
+    List<SysRole> findAllInfo();
 
+    /**
+     * 查询所有角色信息
+     * @return
+     */
+    List<SysRole> findAllRoleInfo();
+
+
+    /**
+     * 根据角色ID查询所有角色信息
+     * @param id
+     * @return
+     */
+    List<SysRole> getRoleByUserId(@Param("id") Long id);
 }

@@ -1,6 +1,6 @@
 package com.async.stock.config;
 
-import com.async.stock.pojo.domain.StockInfoConfig;
+import com.async.stock.pojo.vo.StockInfoConfig;
 import com.async.stock.utils.IdWorker;
 import com.async.stock.utils.ParserStockInfoUtil;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;

@@ -6,39 +6,45 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * @author by itheima
- * @Date 2021/12/21
- * @Description 用户信息查询vo
+ * @author daocaoaren
+ * @date 2024/7/22 12:26
+ * @description : 前端对于分页查询传递的请求参数
  */
 @Data
-@NoArgsConstructor
 @AllArgsConstructor
+@NoArgsConstructor
 @Builder
 public class UserPageReqVo {
+
     /**
      * 当前页
      */
-    private Integer pageNum;
+    public Integer pageNum;
     /**
-     * 每页大小
+     * 当前页面显示了多少条数据
      */
-    private Integer pageSize;
+    public Integer pageSize;
     /**
      * 用户名
      */
-    private String username;
+    public String username;
+
     /**
      * 昵称
      */
-    private String nickName;
+    public String nickName;
+
     /**
      * 开始创建日期
      */
     //@DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private String startTime;
+    public  String startTime;
     /**
      * 结束创建日期
      */
     //@DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
-    private String endTime;
+    public  String endTime;
+
+
+
 }
