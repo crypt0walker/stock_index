@@ -17,6 +17,14 @@
 - 利用spring security实现用户认证鉴权问题，解决
 - 利用Spring cache实现……
 
+**项目难点**
+
+- **用户登录验证模块**：利用 JWT 实现无状态认证，结合刷新令牌机制延长会话有效期，并通过令牌撤销管理提升安全性；通过自定义过滤器解析和验证 JWT，将用户信息注入 Spring Security 安全上下文，实现认证与授权，解决了集群和前后端分离环境下的会话管理与资源鉴权问题，提升了系统的扩展性和安全性。
+- **缓存机制**：
+- **分库分表功能**：
+- **多线程采集功能**：
+- **消息队列功能**：
+
 **项目收获**
 
 
@@ -11483,13 +11491,1579 @@ public Authentication attemptAuthentication(HttpServletRequest request, HttpServ
 
 # 二十二、Spring Security自定义Filter
 
+### 1. SpringSecurity内置认证流程
+
+通过研究SpringSecurity内置基于form表单认证的UsernamePasswordAuthenticationFilter过滤器，我们可以仿照自定义认证过滤器：
+
+![image-20241011205708493](./images/image-20241011205708493.png)
+
+内置认证过滤器的核心流程：
+
+![image-20241011205715206](./images/image-20241011205715206.png)
+
+核心流程梳理如下：
+
+- 认证过滤器(UsernamePasswordAuthentionFilter)接收form表单提交的账户、密码信息，并封装成UsernamePasswordAuthenticationToken认证凭对象；
+- 认证过滤器调用认证管理器AuthenticationManager进行认证处理；
+- 认证管理器通过调用用户详情服务获取用户详情UserDetails；
+- 认证管理器通过密码匹配器PasswordEncoder进行匹配，如果密码一致，则将用户相关的权限信息一并封装到Authentication认证对象中；
+- 认证过滤器将Authentication认证过滤器放到认证上下文，方便请求从上下文获取认证信息；
+
+### 2. 自定义Security认证过滤器
+
+​	SpringSecurity内置的认证过滤器是基于post请求且为form表单的方式获取认证数据的，那如何接收前端Json异步提交的数据据实现认证操作呢？
+
+​	显然，我们可仿照UsernamePasswordAuthentionFilter类自定义一个过滤器并实现认证过滤逻辑；
+
+#### 2.1 自定义认证过滤器
+
+​	UsernamePasswordAuthentionFilter过滤器继承了模板认证过滤器AbstractAuthenticationProcessingFilter抽象类，我们也可仿照实现：
+
+~~~java
+package com.itheima.security.security_test.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.authentication.AbstractAuthenticationProcessingFilter;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.ServletInputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.awt.*;
+import java.io.IOException;
+import java.util.HashMap;
+
+/**
+ * 自定义的用户名和密码认证过滤器，继承自 Spring Security 的 AbstractAuthenticationProcessingFilter 类
+ * 该过滤器支持处理前端以 JSON 格式提交的用户名和密码来进行身份认证
+ */
+public class MyUserNamePasswordAuthenticationFilter extends AbstractAuthenticationProcessingFilter {
+
+    /**
+     * 构造函数
+     * @param defaultFilterProcessesUrl 自定义的登录 URL 地址，定义过滤器将处理的请求路径
+     * 通过调用父类 AbstractAuthenticationProcessingFilter 的构造函数来初始化过滤器，设置默认的认证路径
+     */
+    public MyUserNamePasswordAuthenticationFilter(String defaultFilterProcessesUrl) {
+        super(defaultFilterProcessesUrl);  // 调用父类的构造函数，传入登录请求路径
+    }
+
+    /**
+     * 该方法用于处理认证请求，提取用户名和密码并提交给认证管理器进行验证
+     * @param request  HTTP 请求对象，包含登录信息
+     * @param response HTTP 响应对象，返回结果给客户端
+     * @return 返回认证对象（Authentication），表示认证信息
+     * @throws AuthenticationException 当认证过程中出现异常时抛出
+     * @throws IOException 输入/输出异常
+     * @throws ServletException Servlet 异常
+     */
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)
+            throws AuthenticationException, IOException, ServletException {
+        
+        // 判断请求方法是否为 POST，且提交的数据是否为 application/json 格式
+        if (!request.getMethod().equals("POST") ||
+            ! (request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_VALUE)
+                || request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_UTF8_VALUE))) {
+            // 如果请求不是POST方法或内容类型不是JSON，则抛出认证异常
+            throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+        }
+
+        // 从 request 对象中获取传递的数据流
+        ServletInputStream in = request.getInputStream();
+        
+        // 使用 ObjectMapper 将输入流中的 JSON 数据反序列化成 Map 对象
+        // 1. 创建 ObjectMapper 对象，这是 Jackson 库中用于处理 JSON 数据的核心类
+        // 2. 调用 readValue() 方法，将输入流中的 JSON 数据反序列化为 HashMap<String, String>
+        HashMap<String,String> loginInfo = new ObjectMapper().readValue(in, HashMap.class);
+        
+        // 获取用户名，若用户名不存在则设置为空字符串并进行去除前后空格处理
+        String username = loginInfo.get(USER_NAME);
+        username = (username != null) ? username : "";  // 如果用户名为空，则赋值为空字符串
+        username = username.trim();  // 去除用户名前后空格
+
+        // 获取密码，若密码不存在则设置为空字符串
+        String password = loginInfo.get(PASSWORD);
+        password = (password != null) ? password : "";  // 如果密码为空，则赋值为空字符串
+
+        // 将用户名和密码封装到 UsernamePasswordAuthenticationToken 对象中，作为认证请求的凭据
+        UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(username, password);
+
+        // 调用认证管理器（AuthenticationManager）来进行身份认证，并返回认证结果
+        return this.getAuthenticationManager().authenticate(authRequest);
+    }
+
+    /**
+     * 认证成功时的处理方法
+     * @param request  HTTP 请求对象
+     * @param response HTTP 响应对象
+     * @param chain    过滤器链，继续处理后续的过滤器
+     * @param authResult 认证结果，包含用户信息
+     * @throws IOException 输入/输出异常
+     * @throws ServletException Servlet 异常
+     */
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            FilterChain chain,
+                                            Authentication authResult) throws IOException, ServletException {
+        // 认证成功后向客户端返回登录成功信息
+        response.getWriter().write("login success 666.....");
+    }
+
+    /**
+     * 认证失败时的处理方法
+     * @param request  HTTP 请求对象
+     * @param response HTTP 响应对象
+     * @param failed   认证异常对象，包含认证失败的详细信息
+     * @throws IOException 输入/输出异常
+     * @throws ServletException Servlet 异常
+     */
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request,
+                                              HttpServletResponse response,
+                                              AuthenticationException failed) throws IOException, ServletException {
+        // 认证失败后向客户端返回失败信息
+        response.getWriter().write("login failue 999");
+    }
+}
+
+~~~
+
+#### 2.2 定义获取用户详情服务bean
+
+通过实现UserDetailsService接口，loadUserByUsername调用获取数据库中用户信息。
+
+~~~java
+package com.itheima.service;
+
+import com.itheima.entity.TbUser;
+import com.itheima.mapper.TbUserMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+/**
+ * @author by itheima
+ * @Date 2022/5/23
+ * @Description
+ */
+@Service("userDetailsService")
+public class MyUserDetailServiceImpl implements UserDetailsService {
+
+    @Autowired
+    private TbUserMapper tbUserMapper;
+    /**
+     * 使用security当用户认证时，会自动将用户的名称注入到该方法中
+     * 然后我们可以自己写逻辑取加载用户的信息，然后组装成UserDetails认证对象
+     * @param userName
+     * @return 用户的基础信息，包含密码和权限集合，security底层会自动比对前端输入的明文密码
+     * @throws UsernameNotFoundException
+     */
+    @Override
+    public UserDetails loadUserByUsername(String userName) throws UsernameNotFoundException {
+        //1.根据用户名称获取用户的账户信息
+        TbUser dbUser=tbUserMapper.findUserInfoByName(userName);
+        //判断该用户是否存在
+        if (dbUser==null) {
+            throw new UsernameNotFoundException("用户名输入错误！");
+        }
+        //2.组装UserDetails对象
+        //获取当前用户对应的权限集合（自动将以逗号间隔的权限字符串封装到权限集合中）
+        List<GrantedAuthority> list = AuthorityUtils.commaSeparatedStringToAuthorityList(dbUser.getRoles());
+        /*
+            参数1：账户
+            参数2：密码
+            参数3：权限集合
+         */
+        User user = new User(dbUser.getUsername(), dbUser.getPassword(), list);
+        return user;
+    }
+}
+~~~
+
+#### 2.3 定义SecurityConfig类
+
+配置默认认证过滤器，保证自定义的认证过滤器要在默认的认证过滤器之前；
+
+~~~java
+    /**
+     * 配置授权策略
+     * @param http HttpSecurity对象，用于配置安全策略
+     * @throws Exception 异常处理
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        // 禁用跨站请求伪造保护（CSRF），因为默认开启的 CSRF 防护可能会阻止无状态的 API 访问
+        http.csrf().disable();
+
+        // 开始配置授权请求
+        http.authorizeRequests()
+            // 配置 "/authentication/form" 路径的请求不需要认证，允许所有用户访问
+            .antMatchers("/authentication/form").permitAll()
+            // 其他任何请求都需要进行认证才能访问
+            .anyRequest().authenticated();
+
+        // 将自定义的认证过滤器添加到默认的 UsernamePasswordAuthenticationFilter 之前
+        // 这样可以确保自定义过滤器的处理优先于默认的认证逻辑
+        http
+            .addFilterBefore(myUserNamePasswordAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+    }
+
+    /**
+     * 定义自定义的认证过滤器 Bean，并配置默认登录路径和认证管理器
+     * @return 自定义的 MyUserNamePasswordAuthenticationFilter 实例
+     * @throws Exception 异常处理
+     */
+    @Bean
+    public MyUserNamePasswordAuthenticationFilter myUserNamePasswordAuthenticationFilter() throws Exception {
+        // 创建自定义的认证过滤器实例，并设置默认登录路径为 "/authentication/form"
+        MyUserNamePasswordAuthenticationFilter myUserNamePasswordAuthenticationFilter =
+                new MyUserNamePasswordAuthenticationFilter("/authentication/form");
+
+        // 将认证管理器（AuthenticationManager）设置到自定义过滤器中，确保其能正常处理认证
+        myUserNamePasswordAuthenticationFilter.setAuthenticationManager(authenticationManagerBean());
+
+        // 返回自定义过滤器
+        return myUserNamePasswordAuthenticationFilter;
+    }
+    /*是的，你是对的！`MyUserNamePasswordAuthenticationFilter` 已经在之前的实现中定义过，并且设置了自定义登录路径和关联了 `AuthenticationManager`。这段代码的确是在定义和配置该过滤器，但它的作用是为了将之前实现的自定义过滤器通过 Spring 的配置注入到 Spring Security 的过滤器链中，以便实际处理登录认证请求。
+
+    也就是说，虽然我们已经在之前实现了 `MyUserNamePasswordAuthenticationFilter` 这个类，但为了使它生效并参与 Spring Security 的认证流程，我们需要将其通过 `@Bean` 注册到 Spring 容器中，并通过 `HttpSecurity` 的 `addFilterBefore()` 方法将其插入到 Spring Security 默认的认证过滤器链中。
+
+    ### 总结：
+    - **之前的实现**：定义了自定义的 `MyUserNamePasswordAuthenticationFilter` 类，包括如何处理认证请求。
+    - **当前这段代码**：将自定义的过滤器注册为 Spring 的 Bean，并配置其与 `AuthenticationManager` 的关联，以便在 Spring Security 的过滤器链中使用。
+
+    因此，这段代码的目的是让之前实现的自定义过滤器能够在实际应用中生效，负责处理指定路径的登录请求。*/
+
+~~~
+
+#### 2.4 自定义认证流程测试
+
+![image-20241011210552895](./images/image-20241011210552895.png)
+
+### 3. 基于JWT实现无状态认证
+
+​	JWT是无状态的，所以在服务器端无需存储和维护认证信息，这样会大大减轻服务器的压力，所以我们可在自定义的认证过滤器认证成功后通过successfulAuthentication方法向前端颁发token认证字符串；
+
+#### 3.1 认证成功响应JWT实现
+
+这段代码的核心是通过自定义的认证过滤器，在认证成功后使用 JWT （JSON Web Token） 实现无状态的认证，并将生成的 token 返回给前端。JWT 是一种轻量级的、安全的、无状态的认证方式，使用它可以避免在服务器端保存用户的会话信息，减轻服务器压力。
+
+认证成功后响应 JWT 的流程：
+
+1. **认证成功**：在用户成功通过认证后，系统会生成一个 JWT 令牌，其中包含用户的身份信息以及授权信息。
+2. **返回 JWT**：通过 HTTP 响应将生成的 JWT 发送给前端，前端保存这个 token 并在后续的请求中携带它以进行授权。
+
+~~~java
+    /**
+     * 认证成功后的处理方法
+     * @param request  HTTP 请求对象
+     * @param response HTTP 响应对象，用于返回 JWT 给前端
+     * @param chain    过滤器链
+     * @param authResult 认证结果，包含经过认证的用户信息
+     * @throws IOException 输入输出异常
+     * @throws ServletException Servlet 异常
+     */
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            FilterChain chain,
+                                            Authentication authResult) throws IOException, ServletException {
+        // 获取经过认证的用户主体信息 (UserDetails)，此时用户信息已经包含了权限等内容
+        UserDetails principal = (UserDetails) authResult.getPrincipal();
+
+        // 提取用户名
+        String username = principal.getUsername();
+
+        // 获取认证后的用户权限信息
+        // 1. principal 是当前经过认证的用户对象，类型为 UserDetails，它实现了 Spring Security 的 UserDetails 接口
+        // 2. getAuthorities() 方法返回该用户的权限集合，权限可以是角色（如 "ROLE_USER", "ROLE_ADMIN"）或具体的操作权限
+        // 3. 返回值类型是 Collection<? extends GrantedAuthority>，表示包含若干 GrantedAuthority 对象的集合
+        // 4. GrantedAuthority 是 Spring Security 中表示权限的接口，通常由 SimpleGrantedAuthority 类实现，存储权限的字符串表示
+        Collection<? extends GrantedAuthority> authorities = principal.getAuthorities();
+
+        // 使用 JwtTokenUtil 工具类生成 JWT Token，包含用户名和权限信息
+        // JwtTokenUtil.createToken(username, authorities.toString()) 会根据用户名和权限信息生成一个加密的 JWT
+        // 这个 Token 可以用来标识用户身份，在后续请求中可以通过 Token 确认用户的权限
+        String token = JwtTokenUtil.createToken(username, authorities.toString());
+
+        // 创建一个 HashMap 用来组装返回给前端的信息，包含用户名和生成的 JWT Token
+        HashMap<String, String> info = new HashMap<>();
+        info.put("name", username);  // 将用户名放入返回的信息中
+        info.put("token", token);    // 将生成的 JWT Token 放入返回的信息中
+
+        // 设置 HTTP 响应内容的格式为 JSON
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+
+        // 设置响应的字符编码为 UTF-8，确保 JSON 数据能够正确编码
+        response.setCharacterEncoding("utf-8");
+
+        // 使用 ObjectMapper 将组装好的 HashMap 转换成 JSON 字符串，并写入响应中返回给前端
+        response.getWriter().write(new ObjectMapper().writeValueAsString(info));
+    }
+
+~~~
+
+测试获取认证Token
+
+略
+
+#### 3.2 SpringSecurity基于Jwt实现认证小结
+
+![image-20241011211635632](./images/image-20241011211635632.png)
+
+### 4、自定义Security授权过滤
+
+​	上一小结认证成功后向请求方响应了token信息，那么请求方访问其它系统资源时，就需要带着这个token到后台，后台需要一个授权过滤器获取token信息，并解析用户权限信息，将信息封装到UsernamePasswordAuthentionToken对象存入安全上下文，方便请求时安全过滤处理；
+
+#### 4.1 授权流程说明
+
+![image-20241011211812293](./images/image-20241011211812293.png)
+
+#### 4.2 授权实现流程
+
+该代码实现了一个自定义的授权过滤器 `AuthenticationFilter`，它会在每个 HTTP 请求时检查请求头中是否携带有效的 JWT 令牌。通过 JWT 令牌验证用户身份，并将用户的权限信息放入 `SecurityContextHolder` 中，以便后续的授权处理。
+
+~~~java
+package com.itheima.security.config;
+
+import com.google.gson.Gson;
+import com.itheima.security.utils.JwtTokenUtil;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.HashMap;
+
+/**
+ * @author by itheima
+ * @Date 2022/1/23
+ * @Description 权限认证filter
+ * 
+ * 该过滤器继承自 OncePerRequestFilter，保证在每个请求中只会被执行一次。它的主要职责是检查请求中是否带有 JWT，
+ * 如果有 JWT，则验证该 JWT 是否有效并从中提取用户身份和权限信息，将它们放入 Spring Security 的上下文。
+ */
+public class AuthenticationFilter extends OncePerRequestFilter {
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+
+        // 1. 从 HTTP 请求头中获取携带的 JWT 令牌字符串
+        // 注意：如果用户未认证，则 JWT 令牌可能不存在
+        String jwtToken = request.getHeader(JwtTokenUtil.TOKEN_HEADER);
+        
+        // 2. 判断请求中是否携带了 JWT 令牌
+        if (StringUtils.isBlank(jwtToken)) {
+            // 如果没有 JWT 令牌，说明用户可能尚未认证，跳过当前过滤器，放行请求
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // 3. 校验 JWT 令牌的合法性
+        Claims claims = JwtTokenUtil.checkJWT(jwtToken);
+        if (claims == null) {
+            // 如果 JWT 无效或已过期，返回错误提示信息给前端，提示令牌失效，用户需要重新登录
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding("utf-8");
+            response.getWriter().write("jwt token failure!!");
+            return;
+        }
+
+        // 4. 从合法的 JWT 中提取用户名和权限信息
+        // 从 JWT 中获取用户名
+        String username = JwtTokenUtil.getUsername(jwtToken);
+        
+        // 从 JWT 中获取用户的权限信息，通常以数组形式存储
+        // 例如：[P5, ROLE_ADMIN]，权限表示用户的角色和权限级别
+        String roles = JwtTokenUtil.getUserRole(jwtToken);
+        
+        // 将权限的数组格式字符串转化为 GrantedAuthority 对象的集合，方便后续的授权处理
+        String comStr = StringUtils.strip(roles, "[]"); // 去掉字符串中的方括号
+        List<GrantedAuthority> authorityList = AuthorityUtils.commaSeparatedStringToAuthorityList(comStr); // 转为权限对象集合
+
+        // 5. 组装认证成功的票据对象 (UsernamePasswordAuthenticationToken)，用户已认证，密码字段为 null
+        UsernamePasswordAuthenticationToken token = new UsernamePasswordAuthenticationToken(username, null, authorityList);
+
+        // 6. 将认证成功的票据对象保存到 Spring Security 的上下文中
+        // 这样后续的过滤器可以直接获取用户的身份信息和权限信息，用于权限判断
+        SecurityContextHolder.getContext().setAuthentication(token);
+
+        // 7. 放行请求，继续执行后续的过滤器
+        filterChain.doFilter(request, response);
+    }
+}
+~~~
+
+`doFilterInternal` 和 `doFilter` 都是与 Java Web 中的 `Filter` 过滤器机制相关的方法，用于在 HTTP 请求和响应的处理流程中执行自定义逻辑。它们主要用于对 HTTP 请求进行预处理（如认证、授权、日志记录等）或对响应进行后处理。
+
+##### 1. **`doFilter` 方法**：
+
+`doFilter` 是 `javax.servlet.Filter` 接口中定义的核心方法。任何实现 `Filter` 接口的类都必须实现 `doFilter` 方法。这个方法允许在请求到达目标资源（如 Servlet、JSP、Controller）之前，或者响应返回客户端之前，进行一些处理。
+
+**`doFilter` 方法签名**：
+
+```java
+void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException;
+```
+
+- **参数**：
+  - `ServletRequest request`：表示 HTTP 请求对象。
+  - `ServletResponse response`：表示 HTTP 响应对象。
+  - `FilterChain chain`：用于将请求传递给过滤器链中的下一个过滤器或目标资源。
+
+- **作用**：`doFilter` 方法中的逻辑可以在处理请求之前进行预处理，比如权限验证、日志记录等。如果处理完毕后仍然需要继续执行下一个过滤器或目标资源，需要调用 `chain.doFilter(request, response)`。
+
+`doFilter` 典型用法：
+
+```java
+public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+    // 处理请求之前的操作
+    System.out.println("Before processing request");
+    
+    // 传递请求到下一个过滤器或目标资源
+    chain.doFilter(request, response);
+    
+    // 处理响应之后的操作
+    System.out.println("After processing response");
+}
+```
+
+##### 2. **`doFilterInternal` 方法**：
+
+`doFilterInternal` 是 Spring Security 提供的 `OncePerRequestFilter` 类中的一个方法，它是 `OncePerRequestFilter` 中定义的抽象方法，用户必须在自定义过滤器中实现它。
+
+- **Spring Security 中的过滤器机制**：Spring Security 有一系列基于 `Filter` 的安全过滤器（如认证过滤器、授权过滤器等）。`OncePerRequestFilter` 是 Spring 提供的一个抽象类，确保在每个 HTTP 请求中过滤器只执行一次。`doFilterInternal` 是 `OncePerRequestFilter` 中的具体实现方法，用于实现自定义的过滤逻辑。
+
+**`doFilterInternal` 方法签名**：
+
+```java
+protected abstract void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException;
+```
+
+- **参数**：
+  - `HttpServletRequest request`：HTTP 请求对象。
+  - `HttpServletResponse response`：HTTP 响应对象。
+  - `FilterChain filterChain`：用于将请求传递给下一个过滤器或目标资源。
+
+- **作用**：`doFilterInternal` 在每次 HTTP 请求时被调用，用于执行过滤器的核心逻辑，如 JWT 验证、用户权限校验等。由于 `OncePerRequestFilter` 确保过滤器只会在每个请求中执行一次，所以 `doFilterInternal` 是执行过滤操作的关键方法。
+
+`doFilterInternal` 典型用法：
+
+```java
+@Override
+protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+        throws ServletException, IOException {
+    // 处理请求之前的逻辑
+    String token = request.getHeader("Authorization");
+
+    if (token != null) {
+        // 验证 token 的逻辑
+        validateToken(token);
+    }
+
+    // 继续过滤器链，传递请求给下一个过滤器或资源
+    filterChain.doFilter(request, response);
+}
+```
+
+##### **区别与联系**：
+
+1. **`doFilter`**：
+   - 是 `javax.servlet.Filter` 接口的核心方法，任何实现 `Filter` 接口的过滤器都需要实现此方法。
+   - 在整个过滤器链中，每个过滤器都可以实现 `doFilter` 方法来执行特定逻辑。
+   - 可以用于任何 Web 应用程序中，跟 Spring Security 没有直接关联。
+
+2. **`doFilterInternal`**：
+   - 是 Spring Security 中 `OncePerRequestFilter` 类的抽象方法，用于确保过滤器每次请求只执行一次。
+   - 只在 Spring Security 框架的过滤器中使用，作为实现自定义认证、授权逻辑的核心方法。
+   - `doFilterInternal` 是 `OncePerRequestFilter` 内部的实际过滤逻辑的实现，而 `OncePerRequestFilter` 类通过实现 `Filter` 接口的 `doFilter` 方法确保只执行一次过滤。
+
+**总结**：
+
+- `doFilter` 是 `Filter` 接口的标准方法，用于在过滤器链中传递请求。
+- `doFilterInternal` 是 Spring Security 中专门用于处理每次请求中只执行一次过滤器逻辑的方法。
+
+#### 4.3 配置自定义授权过滤器
+
+~~~java
+/**
+  * 给访问的资源配置权限过滤
+  * @param http
+  * @throws Exception
+  */
+@Override
+protected void configure(HttpSecurity http) throws Exception {
+  http.csrf().disable();//禁用跨站请求伪造
+  http.authorizeRequests()//对资源进行认证处理
+    .antMatchers("/myLogin").permitAll()//登录路径无需拦截
+    .anyRequest().authenticated();  //除了上述资源外，其它资源，只有 认证通过后，才能有权访问
+  //添加自定义的认证过滤器：UsernamePasswordAuthenticationFilter是默认的登录认证过滤器，而我们重写了该过滤器，所以访问时，应该先走我们
+  //自定义的过滤器
+  http.addFilterBefore(myUsernamePasswordAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+  //配置授权过滤器，过滤一切资源
+  http.addFilterBefore( authenticationFilter(),MyUsernamePasswordAuthenticationFilter.class);
+}  
+
+/**
+  * 自定义授权过滤器
+  * 过滤一切被访问的资源
+  * @return
+  */
+@Bean
+public AuthenticationFilter authenticationFilter(){
+  AuthenticationFilter filter = new AuthenticationFilter();
+  return filter;
+}
+~~~
+
+访问测试:
+
+​	略
+
+### 5. 自定义权限拒绝处理
+
+​	上一小结当用户未认证访问资源或者认证成功后访问没有权限的资源时，响应给前端的信息不友好，我们可通过自定义权限访问拒绝的处理器来友好提醒用户；
+
+在 Spring Security 中，“匿名用户”和“无权限用户”有着明确的区别，并且对应不同的处理方式。这两种情况分别对应两类用户的访问控制：
+
+1. **匿名用户**：指的是没有登录或未认证的用户。
+   - 匿名用户访问受保护的资源时，Spring Security 认为该用户尚未认证，需要登录。
+   - 对于匿名用户的处理，通常是通过实现 `AuthenticationEntryPoint` 来处理未认证的用户访问受保护资源的情况。
+2. **无权限用户**：指的是已经通过认证（即已经登录）的用户，但没有足够的权限访问某些受保护的资源。
+   - 对于无权限用户的处理，Spring Security 会调用 `AccessDeniedHandler`，该处理器用于处理已登录的用户访问没有权限的资源时的响应。
+
+区别在于处理流程：
+
+- **匿名用户**：Spring Security 通过 `AuthenticationEntryPoint` 来处理未认证用户的访问请求。
+- **无权限用户**：已通过认证，但没有权限访问资源的用户，Spring Security 通过 `AccessDeniedHandler` 处理。
+
+#### 5.1 自定义认证用户权限拒绝处理器
+
+通过实现AccessDeniedHandler接口实现：
+
+~~~java
+    /**
+     * 自定义登录认证策略配置授权策略 -1
+     * @param http
+     * @throws Exception
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+		//......
+        http.exceptionHandling()
+                .accessDeniedHandler(new AccessDeniedHandler() {
+                    @Override
+                    public void handle(HttpServletRequest request,
+                                       HttpServletResponse response,
+                                       AccessDeniedException e) throws IOException, ServletException {
+                        //认证用户访问资源时权限拒绝处理策略
+                        response.getWriter().write("no permission......reject....");
+                    }
+                });
+    }
+~~~
+
+效果：
+
+![image-20241011213055540](./images/image-20241011213055540.png)
+
+#### 5.2 自定义匿名用户拒绝处理器
+
+同样通过实现AuthenticationEntryPoint接口实现：
+
+~~~java
+    /**
+     * 自定义登录认证策略配置授权策略 -1
+     * @param http
+     * @throws Exception
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+		//......
+				http.exceptionHandling()
+                .accessDeniedHandler(new AccessDeniedHandler() {
+                    @Override
+                    public void handle(HttpServletRequest request,
+                                       HttpServletResponse response,
+                                       AccessDeniedException e) throws IOException, ServletException {
+                        //认证用户访问资源时权限拒绝处理策略
+                        response.getWriter().write("no permission......reject....");
+                    }
+                })
+          		.authenticationEntryPoint(new AuthenticationEntryPoint(){
+                    @Override
+    				public void commence(HttpServletRequest request,
+                         HttpServletResponse response,
+                         AuthenticationException authException) throws IOException, ServletException {
+        				 response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        				 response.setCharacterEncoding("UTF-8");
+        				 response.getWriter().write("匿名用户无权访问");
+          });
+    }
+}                                         
+~~~
+
+### 6. 自定义认证授权整体流程小结
+
+![image-20241011213449612](./images/image-20241011213449612.png)
+
+![image-20241011213507624](./images/image-20241011213507624.png)
+
 
 
 
 
 # 二十三、Spring Security项目整合
 
+​	在第一章我们是基于SpringSecurity、JWT技术实现前后端无状态化认证授权，而我们当前的项目是前后端分离的架构，同样也可借助Security框架和Jwt实现前后端的无状态认证授权操作；
 
+## 1、项目自定义认证过滤器
+
+### 1.1 依赖导入
+
+在stock_backend工程导入SpringSecurity启动依赖：
+
+~~~xml
+<!--引入security-->
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+~~~
+
+### 1.2  自定义认证过虑器
+
+当前项目中认证登录信息的合法性， 除了用户名、密码外，还需要校验验证码，所以认证过滤器需要注入redis模板对象：
+
+~~~java
+package com.itheima.stock.security.filter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Strings;
+import com.itheima.stock.constant.StockConstant;
+import com.itheima.stock.security.detail.LoginUserDetail;
+import com.itheima.stock.utils.JwtTokenUtil;
+import com.itheima.stock.vo.req.LoginReqVo;
+import com.itheima.stock.vo.resp.LoginRespVoExt;
+import com.itheima.stock.vo.resp.R;
+import com.itheima.stock.vo.resp.ResponseCode;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationServiceException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.web.authentication.AbstractAuthenticationProcessingFilter;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.ServletInputStream;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description
+ */
+public class JwtLoginAuthenticationFilter extends AbstractAuthenticationProcessingFilter {
+
+    private RedisTemplate redisTemplate;
+
+    /**
+     * 通过setter方法注解redis模板对象
+     * @param redisTemplate
+     */
+    public void setRedisTemplate(RedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
+
+    /**
+     * 通过构造器传入自定义的登录地址
+     * @param loginUrl
+     */
+    public JwtLoginAuthenticationFilter(String loginUrl) {
+        super(loginUrl);
+    }
+
+    /**
+     * 用户认证处理的方法
+     * @param request
+     * @param response
+     * @return
+     * @throws AuthenticationException
+     * @throws IOException
+     * @throws ServletException
+     * 我们约定请求方式必须是post方式，且请求的数据时json格式
+     *              约定请求是账户key：username  密码：password
+     */
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException, IOException, ServletException {
+        //判断请求方法必须是post提交，且提交的数据的内容必须是application/json格式的数据
+        if (!request.getMethod().equals("POST") ||
+                ! (request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_VALUE) || request.getContentType().equalsIgnoreCase(MediaType.APPLICATION_JSON_UTF8_VALUE))) {
+            throw new AuthenticationServiceException("Authentication method not supported: " + request.getMethod());
+        }
+        //获取请求参数
+        //获取reqeust请求对象的发送过来的数据流
+        ServletInputStream in = request.getInputStream();
+        //将数据流中的数据反序列化成Map
+        LoginReqVo vo = new ObjectMapper().readValue(in, LoginReqVo.class);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("utf-8");
+        //1.判断参数是否合法
+        if (vo==null || StringUtils.isBlank(vo.getUsername())
+                || StringUtils.isBlank(vo.getPassword())
+                || StringUtils.isBlank(vo.getSessionId()) || StringUtils.isBlank(vo.getCode())) {
+            R<Object> resp = R.error(ResponseCode.USERNAME_OR_PASSWORD_ERROR.getMessage());
+            response.getWriter().write(new ObjectMapper().writeValueAsString(resp));
+            return null;
+        }
+        //从程序执行的效率看，先进行校验码的校验，成本较低
+        String rCheckCode =(String) redisTemplate.opsForValue().get(StockConstant.CHECK_PREFIX + vo.getSessionId());
+        if (rCheckCode==null || ! rCheckCode.equalsIgnoreCase(vo.getCode())) {
+            //响应验证码输入错误
+            R<Object> resp = R.error(ResponseCode.CHECK_CODE_ERROR.getMessage());
+            response.getWriter().write(new ObjectMapper().writeValueAsString(resp));
+            return null;
+        }
+        String username = vo.getUsername();
+        //username = (username != null) ? username : "";
+        username = username.trim();
+        String password = vo.getPassword();
+        //password = (password != null) ? password : "";
+        //将用户名和密码信息封装到认证票据对象下
+        UsernamePasswordAuthenticationToken authRequest = new UsernamePasswordAuthenticationToken(username, password);
+        // Allow subclasses to set the "details" property
+        //setDetails(request, authRequest);
+        //调用认证管理器认证指定的票据对象
+        return this.getAuthenticationManager().authenticate(authRequest);
+    }
+}
+~~~
+
+## 2、自定义用户详情服务
+
+​	上一小结，我们完成了认证过滤器的开发，认证过程中认证管理器AutenticationManager底层会调用用户详情服务对象获取用户详情信息，所以接下来我们需要实现用户详情服务；
+
+权限表注意事项：
+
+![1672847538351](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1672847538351.png)
+
+### 2.1 自定义UserDetail认证详情信息类
+
+~~~java
+package com.itheima.stock.security.detail;
+
+import com.itheima.stock.vo.resp.PermissionRespNodeVo;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import java.util.Collection;
+import java.util.List;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description 自定义用户认证详情类
+ */
+@Data//setter getter toString
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class LoginUserDetail implements UserDetails {
+
+    /**
+     * 用户名称
+     */
+    private String username;
+//    @Override
+//    public String getUsername() {
+//        return null;
+//    }
+
+    /**
+     * 密码
+     */
+    private String password;
+//    @Override
+//    public String getPassword() {
+//        return null;
+//    }
+
+    /**
+     * 权限信息
+     */
+    private List<GrantedAuthority> authorities;
+//    @Override
+//    public Collection<? extends GrantedAuthority> getAuthorities() {
+//        return null;
+//    }
+
+    /**
+     * 账户是否过期
+     */
+    private boolean isAccountNonExpired=true;
+//    @Override
+//    public boolean isAccountNonExpired() {
+//        return false;
+//    }
+
+    /**
+     * 账户是否被锁定
+     *  true：没有被锁定
+     */
+    private boolean isAccountNonLocked=true;
+//    @Override
+//    public boolean isAccountNonLocked() {
+//        return false;
+//    }
+
+    /**
+     * 密码是否过期
+     *  true:没有过期
+     */
+    private boolean isCredentialsNonExpired=true;
+//    @Override
+//    public boolean isCredentialsNonExpired() {
+//        return false;
+//    }
+
+    /**
+     * 账户是否禁用
+     *  true：没有禁用
+     */
+    private boolean isEnabled=true;
+//    @Override
+//    public boolean isEnabled() {
+//        return false;
+//    }
+
+    /**
+     * 用户ID
+     */
+    private String id;
+    /**
+     * 电话
+     */
+    private String phone;
+    /**
+     * 昵称
+     */
+    private String nickName;
+
+    /**
+     * 真实姓名
+     */
+    private String realName;
+
+    /**
+     * 性别(1.男 2.女)
+     */
+    private Integer sex;
+
+    /**
+     * 账户状态(1.正常 2.锁定 )
+     */
+    private Integer status;
+
+    /**
+     * 邮箱
+     */
+    private String email;
+
+    /**
+     * 权限树，不包含按钮相关权限信息
+     */
+    private List<PermissionRespNodeVo> menus;
+
+    /**
+     * 按钮权限树
+     */
+    private List<String> permissions;
+}
+~~~
+
+### 2.2 自定义UserDetailsService实现
+
+~~~java
+package com.itheima.stock.security.service;
+
+import com.google.common.base.Strings;
+import com.itheima.stock.mapper.SysPermissionMapper;
+import com.itheima.stock.mapper.SysRoleMapper;
+import com.itheima.stock.mapper.SysUserMapperExt;
+import com.itheima.stock.pojo.entity.SysPermission;
+import com.itheima.stock.pojo.entity.SysRole;
+import com.itheima.stock.pojo.entity.SysUser;
+import com.itheima.stock.security.detail.LoginUserDetail;
+import com.itheima.stock.service.PermissionService;
+import com.itheima.stock.vo.resp.PermissionRespNodeVo;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/13
+ * @Description 定义获取用户合法详情信息的服务
+ */
+@Component
+public class LoginUserDetailService implements UserDetailsService {
+
+    @Autowired
+    private SysUserMapperExt sysUserMapperExt;
+
+    @Autowired
+    private SysPermissionMapper sysPermissionMapper;
+
+    @Autowired
+    private SysRoleMapper sysRoleMapper;
+
+    @Autowired
+    private PermissionService permissionService;
+
+
+    /**
+     * 当用户登录认证是，底层会自动调用MyUserDetailService#loadUserByUsername（）把登录的账户名称传入
+     * 根据用户名称获取用户的详情信息：用户名 加密密码 权限集合，还包含前端需要的侧边栏树 、前端需要的按钮权限标识的集合等
+     * @param loginName
+     * @return
+     * @throws UsernameNotFoundException
+     */
+    @Override
+    public UserDetails loadUserByUsername(String loginName) throws UsernameNotFoundException {
+        //2.根据用户名查询用户信息
+        SysUser dbUser= sysUserMapperExt.findUserByUserName(username);
+        //3.判断查询的用户信息
+        if (dbUser==null) {
+            throw new UsernameNotFoundException("用户不存在");
+        }
+        //4.2 成功则返回用户的正常信息
+        //获取指定用户的权限集合 添加获取侧边栏数据和按钮权限的结合信息
+        List<SysPermission> permissions = permissionService.getPermissionByUserId(dbUser.getId());
+        //前端需要的获取树状权限菜单数据
+        List<PermissionRespNodeVo> tree = permissionService.getTree(permissions, 0l, true);
+        //前端需要的获取菜单按钮集合
+        List<String> authBtnPerms = permissions.stream()
+                .filter(per -> !Strings.isNullOrEmpty(per.getCode()) && per.getType() == 3)
+                .map(per -> per.getCode()).collect(Collectors.toList());
+        //5.组装后端需要的权限标识
+        //5.1 获取用户拥有的角色
+        List<SysRole> roles = sysRoleMapper.getRoleByUserId(dbUser.getId());
+        //5.2 将用户的权限标识和角色标识维护到权限集合中
+        List<String> perms=new ArrayList<>();
+        permissions.stream().forEach(per->{
+            if (StringUtils.isNotBlank(per.getPerms())) {
+                perms.add(per.getPerms());
+            }
+        });
+        roles.stream().forEach(role->{
+            perms.add("ROLE_"+role.getName());
+        });
+        String[] permStr=perms.toArray(new String[perms.size()]);
+        //5.3 将用户权限标识转化成权限对象集合
+        List<GrantedAuthority> authorityList = AuthorityUtils.createAuthorityList(permStr);
+        //6.封装用户详情信息实体对象
+        LoginUserDetail loginUserDetail = new LoginUserDetail();
+        //将用户的id nickname等相同属性信息复制到详情对象中
+        BeanUtils.copyProperties(dbUser,loginUserDetail);
+        loginUserDetail.setMenus(tree);
+        loginUserDetail.setAuthorities(authorityList);
+        loginUserDetail.setPermissions(authBtnPerms);
+        return loginUserDetail;
+    }
+}
+~~~
+
+### 2.3 完善相关mapper
+
+**A.定义根据用户名查询用户信息的接口方法**
+
+在SysUserMapper定义方法：
+
+~~~java
+    /**
+     * 根据用户名查询用户信息
+     * @param username
+     * @return
+     */
+    SysUser findUserByUserName(@Param("username") String username);
+~~~
+
+绑定xml：
+
+~~~xml
+    <select id="findUserByUserName" resultMap="BaseResultMap">
+        select <include refid="Base_Column_List"/> from sys_user where username=#{username}
+    </select>
+~~~
+
+**B.定义根据用户id查询角色信息的接口方法**
+
+在SysRoleMapper定义方法：
+
+```java
+    /**
+     * 根据用户id查询角色信息
+     * @param userId
+     * @return
+     */
+    List<SysRole> getRoleByUserId(@Param("userId") Long userId);
+```
+
+绑定xml：
+
+```xml
+<select id="getRoleByUserId" resultMap="BaseResultMap">
+  SELECT
+  r.*
+  FROM
+  sys_user_role AS ur,
+  sys_role AS r
+  WHERE
+  ur.role_id = r.id
+  AND ur.user_id = #{userId}
+</select>
+```
+
+**C.定义根据用户id查询权限信息的接口方法**
+
+在SysPermissionMapper定义方法：
+
+~~~java
+    /**
+     * 根据用户id查询用户信息
+     * @param userId
+     * @return
+     */
+    List<SysPermission> getPermissionByUserId(@Param("userId") Long userId);
+~~~
+
+绑定xml：
+
+~~~xml
+    <select id="getPermissionByUserId" resultMap="BaseResultMap">
+        SELECT
+           distinct  p.*
+        FROM
+            sys_role_permission AS rp,
+            sys_user_role AS ur,
+            sys_permission AS p
+        WHERE
+            ur.role_id = rp.role_id
+          AND rp.permission_id = p.id
+          AND ur.user_id = #{userId}
+    </select>
+~~~
+
+
+
+## 3、认证成功后响应Token实现
+
+在认证成功方法successfulAuthentication中，基于jwt将用户信息和相关的权限信息通过jwt加密响应给前端请求：
+
+~~~java
+public class JwtLoginAuthenticationFilter extends AbstractAuthenticationProcessingFilter {
+   //省略N行代码......
+  
+    /**
+     * 用户认证成功后回调的方法
+     * 认证成功后，响应前端token信息
+     * @param request
+     * @param response
+     * @param chain security的过滤器链
+     * @param authResult
+     * @throws IOException
+     * @throws ServletException
+     */
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            FilterChain chain,
+                                            Authentication authResult) throws IOException, ServletException {
+        //获取用户的详情信息
+        LoginUserDetail userDetail = (LoginUserDetail) authResult.getPrincipal();
+        //组装LoginRespVoExt
+        //获取用户名称
+        String username = userDetail.getUsername();
+        //获取权限集合对象
+        List<GrantedAuthority> authorities = userDetail.getAuthorities();
+        String auStrList = authorities.toString();
+        //复制userDetail属性值到LoginRespVoExt对象即可
+        LoginRespVoExt resp = new LoginRespVoExt();
+        BeanUtils.copyProperties(userDetail,resp);
+        //生成token字符串:将用户名称和权限信息价格生成token字符串
+        String tokenStr = JwtTokenUtil.createToken(username, auStrList);
+        resp.setAccessToken(tokenStr);
+        //封装统一响应结果
+        R<Object> r = R.ok(resp);
+        String respStr = new ObjectMapper().writeValueAsString(r);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(respStr);
+    }
+
+    /**
+     * 认证失败后，回调的方法
+     * @param request
+     * @param response
+     * @param failed
+     * @throws IOException
+     * @throws ServletException
+     */
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) throws IOException, ServletException {
+        R<Object> r = R.error(ResponseCode.SYSTEM_PASSWORD_ERROR);
+        String respStr = new ObjectMapper().writeValueAsString(r);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(respStr);
+    }
+~~~
+
+
+
+## 4、定义Security配置类
+
+过程同第一章节大致一样，需要注意swagger访问、knif4j、验证码等资源设置pertmall访问权限；
+
+~~~java
+package com.itheima.stock.security.config;
+
+import com.itheima.stock.security.filter.JwtAuthorizationFilter;
+import com.itheima.stock.security.filter.JwtLoginAuthenticationFilter;
+import com.itheima.stock.security.handler.StockAccessDenyHandler;
+import com.itheima.stock.security.handler.StockAuthenticationEntryPoint;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description
+ */
+@Configuration
+@EnableWebSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+public class SecurityConfig  extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+
+    /**
+     * 定义公共的无需被拦截的资源
+     * @return
+     */
+    private String[] getPubPath(){
+        //公共访问资源
+        String[] urls = {
+                "/**/*.css","/**/*.js","/favicon.ico","/doc.html",
+                "/druid/**","/webjars/**","/v2/api-docs","/api/captcha",
+                "/swagger/**","/swagger-resources/**","/swagger-ui.html"
+        };
+        return urls;
+    }
+
+    /**
+     * 配置过滤规则
+     * @param http
+     * @throws Exception
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        //登出功能
+        http.logout().logoutUrl("/api/logout").invalidateHttpSession(true);
+        //开启允许iframe 嵌套。security默认禁用ifram跨域与缓存
+        http.headers().frameOptions().disable().cacheControl().disable();
+        //session禁用
+        http.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);
+        http.csrf().disable();//禁用跨站请求伪造
+        http.authorizeRequests()//对资源进行认证处理
+                .antMatchers(getPubPath()).permitAll()//公共资源都允许访问
+                .anyRequest().authenticated();  //除了上述资源外，其它资源，只有 认证通过后，才能有权访问
+        //自定义的过滤器
+        http.addFilterBefore(jwtLoginAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
+    }
+
+    /**
+     * 自定义认证过滤器bean
+     * @return
+     * @throws Exception
+     */
+    @Bean
+    public JwtLoginAuthenticationFilter jwtLoginAuthenticationFilter() throws Exception {
+        JwtLoginAuthenticationFilter filter = new JwtLoginAuthenticationFilter("/api/login");
+        filter.setAuthenticationManager(authenticationManagerBean());
+        filter.setRedisTemplate(redisTemplate);
+        return filter;
+    }
+
+    /**
+     * 定义密码加密器，实现对明文密码的加密和匹配操作
+     * @return
+     */
+    @Bean
+    public PasswordEncoder passwordEncoder(){
+        return new BCryptPasswordEncoder();
+    }
+}
+~~~
+
+> 注意：认证过滤器配置完毕后，需要注释掉原来的登录入口；
+
+断点调试认证流程：
+
+​	略；
+
+## 5、自定义授权过滤器
+
+授权的逻辑与第一章相似，需要实现OncePerRequestFilter过滤器；
+
+### 5.1 定义授权顾虑器
+
+~~~java
+package com.itheima.stock.security.filter;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itheima.stock.constant.StockConstant;
+import com.itheima.stock.utils.JwtTokenUtil;
+import com.itheima.stock.vo.resp.R;
+import com.itheima.stock.vo.resp.ResponseCode;
+import io.jsonwebtoken.Claims;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.util.List;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description 定义授权过滤器，核心作用：
+ *      1.过滤请求，获取请求头中的token字符串
+ *      2.解析token字符串，并获取token中信息：username role
+ *      3.将用户名和权限信息封装到UsernamePassowrdAuthentionToken票据对象下
+ *      4.将票据对象放入安全上下文，方便校验权限时，随时获取
+ */
+public class JwtAuthorizationFilter extends OncePerRequestFilter {
+
+    /**
+     * 访问过滤的方法
+     * @param request
+     * @param response
+     * @param filterChain 过滤器链
+     * @throws ServletException
+     * @throws IOException
+     */
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        //1.从request对象下获取token数据，约定key：Authorization
+        String tokenStr = request.getHeader(StockConstant.TOKEN_HEADER);
+        //判断token字符串是否存在
+        if (tokenStr==null) {
+            //如果票据为null，可能用户还没有认证，正准备去认证,所以放行请求
+            //放行后，会不会访问当受保护的资源呢？不会，因为没有生成UsernamePassowrdAuthentionToken
+            filterChain.doFilter(request,response);
+            return;
+        }
+        //2.解析tokenStr,获取用户详情信息
+        Claims claims = JwtTokenUtil.checkJWT(tokenStr);
+        //token字符串失效的情况
+        if (claims==null) {
+            //说明 票据解析出现异常，票据就失效了
+            R<Object> r = R.error(ResponseCode.TOKEN_NO_AVAIL);
+            String respStr = new ObjectMapper().writeValueAsString(r);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write(respStr);
+            return;
+        }
+        //获取用户名和权限信息
+        String userName = JwtTokenUtil.getUsername(tokenStr);
+        //生成token时，权限字符串的格式是：[P8,ROLE_ADMIN]
+        String perms = JwtTokenUtil.getUserRole(tokenStr);
+        //生成权限集合对象
+        //P8,ROLE_ADMIN
+        String strip = StringUtils.strip(perms, "[]");
+        List<GrantedAuthority> authorityList = AuthorityUtils.commaSeparatedStringToAuthorityList(strip);
+        //将用户名和权限信息封装到token对象下
+        UsernamePasswordAuthenticationToken token=new UsernamePasswordAuthenticationToken(userName,null,authorityList);
+        //将token对象存入安全上限文，这样，线程无论走到哪里，都可以获取token对象，验证当前用户访问对应资源是否被授权
+        SecurityContextHolder.getContext().setAuthentication(token);
+        //资源发行
+        filterChain.doFilter(request,response);
+    }
+}
+~~~
+
+### 5.2 配置授权过滤器
+
+在SecurityConfig类中配置授权过滤器：
+
+```java
+    /**
+     * 配置过滤规则
+     * @param http
+     * @throws Exception
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+		//......省略
+        //配置授权过滤器，过滤一切资源
+        http.addFilterBefore(jwtAuthorizationFilter(),JwtLoginAuthenticationFilter.class);
+    }
+
+    /**
+     * 自定义授权过滤器
+     * @return
+     */
+    @Bean
+    public JwtAuthorizationFilter jwtAuthorizationFilter(){
+        return new JwtAuthorizationFilter();
+    }
+```
+
+授权访问测试；
+
+​	略
+
+## 6、定义权限拒绝处理器
+
+- 定义用户认证成功无权限访问处理器
+
+~~~java
+package com.itheima.stock.security.handler;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itheima.stock.vo.resp.R;
+import com.itheima.stock.vo.resp.ResponseCode;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.web.access.AccessDeniedHandler;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description 定义没有权限，访问拒绝的处理器
+ * 用户认证成功，但是没有访问的权限，则会除非拒绝处理器
+ * 如果是匿名用户访问被拒绝则使用匿名拒绝的处理器
+ */
+@Slf4j
+public class StockAccessDenyHandler implements AccessDeniedHandler {
+    @Override
+    public void handle(HttpServletRequest request,
+                       HttpServletResponse response,
+                       AccessDeniedException ex) throws IOException, ServletException {
+        log.info("访问拒绝，异常信息：{}",ex.getMessage());
+        //说明 票据解析出现异常，票据就失效了
+        R<Object> r = R.error(ResponseCode.NOT_PERMISSION);
+        String respStr = new ObjectMapper().writeValueAsString(r);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(respStr);
+    }
+}
+~~~
+
+- 匿名用户(未认证用户)访问拒绝处理器
+
+~~~java
+package com.itheima.stock.security.handler;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.itheima.stock.vo.resp.R;
+import com.itheima.stock.vo.resp.ResponseCode;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.web.AuthenticationEntryPoint;
+
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
+
+/**
+ * @author by itheima
+ * @Date 2022/7/14
+ * @Description
+ *  未认证的用户访问被拒绝的处理器
+ */
+public class StockAuthenticationEntryPoint implements AuthenticationEntryPoint {
+    @Override
+    public void commence(HttpServletRequest request,
+                         HttpServletResponse response,
+                         AuthenticationException authException) throws IOException, ServletException {
+        //说明 票据解析出现异常，票据就失效了
+        R<Object> r = R.error(ResponseCode.NOT_PERMISSION);
+        String respStr = new ObjectMapper().writeValueAsString(r);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+        response.getWriter().write(respStr);
+    }
+}
+~~~
+
+- 配置类配置处理器
+
+在SecurityConfig类配置处理器：
+
+~~~java
+    /**
+     * 配置过滤规则
+     * @param http
+     * @throws Exception
+     */
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+		//省略......
+        //配置权限访问拒绝处理器
+        http.exceptionHandling().accessDeniedHandler(new StockAccessDenyHandler())
+                .authenticationEntryPoint(new StockAuthenticationEntryPoint());
+    }
+~~~
+
+测试拒绝处理器：
+
+​	略
+
+## 7、配置资源访问权限注解
+
+为接口添加权限注解，比如：
+
+~~~java
+@RestController
+@RequestMapping("/api")
+public class LogController {
+
+    @Autowired
+    private LogService logService;
+
+
+    /**
+     * 日志信息综合查询
+     * @param vo
+     * @return
+     */
+    @PreAuthorize("hasAuthority('sys:log:list')")
+    @PostMapping("/logs")
+    public R<PageResult> logPageQuery(@RequestBody LogPageReqVo vo){
+
+        return logService.logPageQuery(vo);
+    }
+
+    /**
+     * 批量删除日志信息功能
+     * @param logIds
+     * @return
+     */
+    @DeleteMapping("/log")
+    @PreAuthorize("hasAuthority('sys:log:delete')")
+    public R<String> deleteBatch(@RequestBody List<Long> logIds){
+        return this.logService.deleteBatch(logIds);
+    }
+
+}
+~~~
+
+使用test和admin用户分别访问测试:
+
+略；
+
+## 8、前端动态路由调整
+
+当前前端的路由资源都是配置死的，而我们需要根据不同的用户加载不同路由资源，所以前端需要做如下调整：
+
+前端请求时携带token逻辑如下：
+
+![1648290993515](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1648290993515.png)
+
+登录逻辑中注释掉默认的参数配置：
+
+![1646216176966](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1646216176966.png)
+
+注释掉默认的路由组件，自动加载来自后台的动态路由参数；
+
+![1646216339222](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1646216339222.png)
+
+访问测试：用户：test 密码：123456登录后效果：
+
+![1646216464347](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1646216464347.png)
+
+用户：admin 密码：123456登录后效果：
+
+![1646216483995](./blog/C:/Users/16232/Desktop/项目1-今日指数课件/day11-项目集成安全框架/讲义/assets/1646216483995.png)
+
+用户登录信息保存在前端SessionStorage下：
+
+![1653295816756](assets/1653295816756.png)
 
 
 
